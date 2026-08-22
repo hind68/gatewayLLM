@@ -95,11 +95,10 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   margin-bottom: 4px;
   color: #333333;
   direction: ltr;
- 
 }
 
 .assistant-logo {
@@ -123,6 +122,16 @@
   display: block;
 }
 
+.assistant-logo:not(:has(img)) {
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--model-badge-gradient-start), var(--model-badge-gradient-end));
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.8;
+}
+
 .assistant-meta {
   min-width: 0;
   display: flex;
@@ -132,7 +141,7 @@
 
 .assistant-meta strong {
   min-width: 0;
-  color: #2f2f2f;
+  color: #000000b5;
   font-size: 13px;
   font-weight: 620;
   line-height: 1.2;

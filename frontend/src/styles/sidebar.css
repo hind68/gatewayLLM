@@ -325,7 +325,10 @@
   display: grid;
   grid-template-columns: var(--sidebar-icon-column-open) minmax(0, 1fr);
   align-items: center;
-  gap: 0;
+  /* The 28px avatar leaves less breathing room in the 40px icon column than
+     the ~19-20px nav icons do; a small gap brings it back to the same visual
+     spacing as the nav buttons above. */
+  gap: 4px;
   margin: 0 var(--sidebar-item-margin);
   padding: 0;
   text-align: left;
@@ -449,36 +452,10 @@
   justify-items: start;
 }
 
-.sidebar-closed .sidebar-navigation button {
-  width: var(--sidebar-open-width);
-  height: 36px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-}
-
-.sidebar-closed .sidebar-icon,
-.sidebar-closed .user-avatar-wrapper {
-  width: 56px;
-}
-
-.sidebar-closed .sidebar-icon::before,
-.sidebar-closed .user-avatar-wrapper::before {
-  width: 40px;
-}
-
 .sidebar-closed .sidebar-user {
   margin-top: auto;
   border-top: 0;
   padding: 8px 0;
-}
-
-.sidebar-closed .sidebar-user > button {
-  width: var(--sidebar-open-width);
-  height: 40px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
 }
 
 .sidebar-closed .user-avatar {

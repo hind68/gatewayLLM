@@ -14,12 +14,22 @@ export default function ModelSelector({ activeModel, disabled, isOpen, models, o
       </button>
       {isOpen && (
         <div className="model-menu" role="menu">
-          {models.map((model) => (
-            <button key={model.alias} type="button" role="menuitem" onClick={() => onSelect(model.alias)}>
-              <strong>{model.displayName}</strong>
-              <span>{modelProviderName(model.alias)}</span>
-            </button>
-          ))}
+          {models.map((model) => {
+            const isActive = activeModel?.alias === model.alias
+            return (
+              <button
+                key={model.alias}
+                type="button"
+                role="menuitem"
+                className={isActive ? 'selected' : ''}
+                aria-current={isActive || undefined}
+                onClick={() => onSelect(model.alias)}
+              >
+                <strong>{model.displayName}</strong>
+                <span>{modelProviderName(model.alias)}</span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

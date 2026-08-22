@@ -39,11 +39,18 @@ select {
   transition: border-color 0.2s ease;
 }
 
-button:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* Keyboard-only focus ring for buttons, matching the ring already used on
+   .go-bottom-button / document-inspector controls (#E2E8F0, 2px). Only
+   applies on :focus-visible, so mouse/touch interaction is unaffected. */
+button:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px #E2E8F0 !important;
 }
 
 textarea:focus-visible {
