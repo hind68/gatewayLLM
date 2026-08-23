@@ -51,11 +51,13 @@ export default function ChatThread({
         <div ref={bottomRef} className="bottom-anchor" />
       </section>
 
-      {!isLastBlockVisible && hasActiveMessages && (
+      {hasActiveMessages && (
         <button
-          className={`go-bottom-button ${isGenerating ? 'is-generating' : ''}`}
+          className={`go-bottom-button ${isLastBlockVisible ? '' : 'is-visible'} ${isGenerating ? 'is-generating' : ''}`}
           type="button"
           aria-label="Défiler vers le bas"
+          aria-hidden={isLastBlockVisible}
+          tabIndex={isLastBlockVisible ? -1 : 0}
           onClick={goToBottom}
         >
           {isGenerating ? (

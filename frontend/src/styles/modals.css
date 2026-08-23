@@ -79,7 +79,7 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-overlay);
   background-color: rgba(0, 0, 0, 0.05);
   backdrop-filter: blur(1.5px);
   display: flex;
@@ -89,6 +89,7 @@
 
 .search-modal-overlay {
   align-items: flex-start;
+  animation: modal-backdrop-in 160ms ease-out both;
 }
 
 .model-gallery-overlay {
@@ -101,14 +102,14 @@
   --modal-x-padding: 18px;
   margin-top: 10vh;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: #ffffff;
-  box-shadow:
-    0 10px 24px rgba(15, 23, 42, 0.08),
-    0 2px 6px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--shadow-md);
   display: grid;
   gap: 0;
   padding: var(--modal-x-padding);
+  transform-origin: top;
+  animation: modal-pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .search-modal-header {
@@ -188,7 +189,7 @@
   align-content: start;
   gap: 4px;
   padding: 2px;
-  scrollbar-color: rgba(107, 114, 128, 0.34) transparent;
+  scrollbar-color: rgba(40, 50, 68, 0.34) transparent;
   scrollbar-width: thin;
 }
 
@@ -198,7 +199,7 @@
 
 .search-results::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(107, 114, 128, 0.34);
+  background: rgba(40, 50, 68, 0.34);
 }
 
 .search-results::-webkit-scrollbar-track,
@@ -258,11 +259,43 @@
 }
 
 
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-modal,
+  .confirm-modal,
+  .search-modal-overlay,
+  .modal-backdrop {
+    animation-duration: 60ms;
+  }
+}
+
+
 /* Confirmation and model decision dialogs */
 .decision-backdrop,
 .modal-backdrop {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-dialog-backdrop);
   inset: 0;
   background: rgba(0, 0, 0, 0.22);
   display: grid;
@@ -276,9 +309,10 @@
 }
 
 .modal-backdrop {
-  z-index: 180;
+  z-index: 180; /* intentionally above --z-dialog-backdrop: ConfirmDialog must outrank the model-decision dialog */
   background: rgba(0, 0, 0, 0.05);
   backdrop-filter: blur(1.5px);
+  animation: modal-backdrop-in 160ms ease-out both;
 }
 
 .decision-box,
@@ -286,11 +320,9 @@
   width: min(420px, 100%);
   max-width: 420px;
   border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: #ffffff;
-  box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.1),
-    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-lg);
   padding: 32px 24px;
 }
 
@@ -300,6 +332,7 @@
 
 .confirm-modal {
   width: min(420px, 100%);
+  animation: modal-pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .confirm-modal-icon {
@@ -329,7 +362,7 @@
 .decision-box p,
 .confirm-modal p {
   margin: 0 0 32px;
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 14px;
   line-height: 1.5;
   text-align: center;
@@ -344,7 +377,7 @@
 .decision-actions {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
   margin-top: 0;
 }
@@ -352,7 +385,7 @@
 .confirm-modal-actions {
   display: flex;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-3);
   margin-top: 0;
   width: 100%;
 }
@@ -361,7 +394,7 @@
 .confirm-modal-actions button {
   min-height: 42px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #111111;
   color: #ffffff;
   cursor: pointer;
@@ -372,13 +405,13 @@
 .decision-actions button {
   width: 100%;
   min-height: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: #0f172a;
   color: #ffffff;
   padding: 10px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
-  transition: background-color 0.2s;
+  transition: background-color 0.15s ease;
 }
 
 .decision-actions button:hover {
@@ -416,10 +449,11 @@
 .confirm-modal-actions button {
   flex: 1;
   min-height: 42px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 10px 0;
   font-size: 14px;
   font-weight: 500;
+  transition: all 0.15s ease;
 }
 
 .decision-actions .secondary,
@@ -433,7 +467,7 @@
 }
 
 .confirm-modal-actions .secondary {
-  border: 1px solid #d1d5db;
+  border: 1px solid #e5e7eb;
   background: #ffffff;
   color: #374151;
   transition: all 0.15s ease;
@@ -447,7 +481,7 @@
 
 .confirm-modal-actions .danger {
   border: 0;
-  background: #dc2626;
+  background: var(--color-danger);
   color: #ffffff;
   font-weight: 500;
 }

@@ -1,6 +1,8 @@
 import ModelCard from './ModelCard'
 
-export default function ModelGallery({ disabled, models, onClose, onSelect }) {
+const SKELETON_COUNT = 8
+
+export default function ModelGallery({ disabled, isLoading, models, onClose, onSelect }) {
   return (
     <div className="modal-overlay model-gallery-overlay" role="presentation" onMouseDown={onClose}>
       <section
@@ -20,19 +22,36 @@ export default function ModelGallery({ disabled, models, onClose, onSelect }) {
         </div>
 
         <div className="model-card-grid">
-          {models.map((model) => (
-            <ModelCard
-              disabled={disabled}
-              key={model.alias}
-              model={model}
-              onSelect={(alias) => {
-                onSelect(alias)
-                onClose()
-              }}
-            />
-          ))}
+          {isLoading
+            ? Array.from({ length: SKELETON_COUNT }).map((_, index) => <ModelCardSkeleton key={index} />)
+            : models.map((model) => (
+              <ModelCard
+                disabled={disabled}
+                key={model.alias}
+                model={model}
+                onSelect={(alias) => {
+                  onSelect(alias)
+                  onClose()
+                }}
+              />
+            ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+function ModelCardSkeleton() {
+  return (
+    <div className="model-card model-card-skeleton" aria-hidden="true">
+      <div className="model-card-visual">
+        <span className="skeleton-block skeleton-logo" />
+      </div>
+      <div className="model-card-copy">
+        <span className="skeleton-block skeleton-line skeleton-line-title" />
+        <span className="skeleton-block skeleton-line" />
+        <span className="skeleton-block skeleton-line skeleton-line-short" />
+      </div>
     </div>
   )
 }

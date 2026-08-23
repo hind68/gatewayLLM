@@ -72,6 +72,17 @@
     box-shadow: none;
   }
 
+  /* On desktop, hover already swaps the mark to the "open" hint icon. Touch
+     screens have no hover, so without this the closed rail gives no visual
+     cue that tapping the logo reopens the sidebar. */
+  .sidebar-closed .sidebar-brand .sidebar-logo-default {
+    opacity: 0;
+  }
+
+  .sidebar-closed .sidebar-brand .sidebar-logo-hover {
+    opacity: 1;
+  }
+
   .model-gallery {
     width: min(100%, calc(100vw - 24px));
     max-width: calc(100vw - 24px);

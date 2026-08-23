@@ -65,7 +65,7 @@
   padding: 7px 8px 7px 0;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-  transition: opacity 160ms ease;
+  transition: opacity 160ms ease, height 100ms ease;
 }
 
 .composer-input-row {
@@ -254,11 +254,30 @@
   transition:
     background-color 160ms ease,
     border-color 160ms ease;
+  animation: attachment-chip-in 160ms ease-out both;
 }
 
 .attachment-chip:hover {
   background-color: #f3f6fa;
   border-color: #e2e8f0;
+}
+
+@keyframes attachment-chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attachment-chip {
+    animation-duration: 1ms;
+  }
 }
 
 .attachment-chip-copy {
@@ -454,15 +473,6 @@
 
 .composer button.clear-attachments span::after {
   transform: rotate(-45deg);
-}
-
-.paperclip-icon {
-  width: 16px;
-  height: 16px;
-  border: 2px solid currentColor;
-  border-left-color: transparent;
-  border-radius: 10px;
-  transform: rotate(-35deg);
 }
 
 .plus-icon {

@@ -186,9 +186,10 @@
 .history-title-input {
   width: 100%;
   min-width: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
+  flex: 1 1 auto;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: #ffffff;
   box-shadow: none;
   color: inherit;
   font: inherit;
@@ -198,16 +199,19 @@
   line-height: 1.5;
   margin: 0;
   outline: none !important;
-  padding: 2px 4px;
+  padding: 3px 7px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .history-title-input:focus,
 .history-title-input:focus-visible {
-  background-color: rgba(0, 0, 0, 0.05);
-  border: none !important;
-  border-bottom: none !important;
-  box-shadow: none !important;
+  border-color: var(--border-subtle);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
   outline: none !important;
+}
+
+.history-item.editing {
+  cursor: text;
 }
 
 .inline-generating {
@@ -348,6 +352,11 @@
   background: var(--ui-blue-100);
 }
 
+.recent-section .history-row:has(.editing),
+.collapsed-panel .history-row:has(.editing) {
+  background: transparent;
+}
+
 .recent-section .history-item {
   flex: 1 1 auto;
   min-width: 0;
@@ -391,8 +400,12 @@
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
+  /* Soft fade instead of a literal "..." so a truncated title never visually
+     collides with the "..." menu button that overlaps this same corner on hover. */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
 }
 
 .recent-section .history-item span {
@@ -433,4 +446,10 @@
   z-index: 60;
   opacity: 1;
   pointer-events: auto;
+}
+
+.recent-section .history-row:has(.editing) .conversation-menu,
+.collapsed-panel .history-row:has(.editing) .conversation-menu {
+  opacity: 0;
+  pointer-events: none;
 }

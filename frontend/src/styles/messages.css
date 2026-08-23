@@ -267,12 +267,15 @@
 }
 
 .assistant-error {
-  max-width: 100%;
-  border: 1px solid rgba(185, 28, 28, 0.12);
-  border-radius: 13px;
-  background: #fff7f7;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin-right: auto;
+  border: 1px solid rgba(185, 28, 28, 0.14);
+  border-radius: 14px;
+  background: #fff8f8;
   color: #8f1d1d;
-  padding: 12px 14px;
+  padding: 13px 16px 14px;
   animation: assistant-error-in 220ms ease-out both;
 }
 
@@ -289,6 +292,7 @@
   color: #9f3434;
   font-size: 14px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
   white-space: pre-line;
 }
 
@@ -299,7 +303,7 @@
   margin-right: auto;
   background-color: #FEF2F2;
   border: 1px solid #FECACA;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: #991B1B;
   padding: 16px;
   animation: assistant-error-in 220ms ease-out both;
@@ -321,7 +325,7 @@
 .dlp-alert p {
   margin: 4px 0 0;
   color: #881337;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-line;
 }

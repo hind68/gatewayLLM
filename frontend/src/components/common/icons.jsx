@@ -16,10 +16,6 @@ export function StopIcon() {
   return <span className="stop-icon" aria-hidden="true"></span>
 }
 
-export function PaperclipIcon() {
-  return <span className="paperclip-icon" aria-hidden="true"></span>
-}
-
 export function PlusIcon() {
   return <span className="plus-icon" aria-hidden="true"></span>
 }

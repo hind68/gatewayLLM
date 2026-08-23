@@ -28,27 +28,36 @@ export default function ConversationItem({
     <div className={`history-row ${activeConversation?.id === conversation.id ? 'active' : ''} ${isUnread ? 'unread' : ''}`}>
       {isEditing ? (
         <div className="history-item editing">
-          <input
-            autoFocus
-            className="history-title-input"
-            type="text"
-            value={editingTitle}
-            onBlur={() => saveInlineRename(conversation)}
-            onChange={(event) => setEditingTitle(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                event.currentTarget.blur()
-              }
-              if (event.key === 'Escape') {
-                setEditingConversationId(null)
-                setEditingTitle('')
-              }
-            }}
-          />
+          <span className="history-title">
+            {modelLogo && <img className="conversation-model-icon" src={modelLogo} alt="" aria-hidden="true" />}
+            <input
+              autoFocus
+              className="history-title-input"
+              type="text"
+              value={editingTitle}
+              onFocus={(event) => event.currentTarget.select()}
+              onBlur={() => saveInlineRename(conversation)}
+              onChange={(event) => setEditingTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  event.currentTarget.blur()
+                }
+                if (event.key === 'Escape') {
+                  setEditingConversationId(null)
+                  setEditingTitle('')
+                }
+              }}
+            />
+          </span>
         </div>
       ) : (
-        <button className="history-item" type="button" onClick={() => openConversation(conversation)}>
+        <button
+          className="history-item"
+          type="button"
+          title={displayConversationTitle(conversation.title)}
+          onClick={() => openConversation(conversation)}
+        >
           <span className="history-title">
             {modelLogo && <img className="conversation-model-icon" src={modelLogo} alt="" aria-hidden="true" />}
             <span className="conversation-title-text">{displayConversationTitle(conversation.title)}</span>

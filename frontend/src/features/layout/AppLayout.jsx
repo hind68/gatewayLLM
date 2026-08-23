@@ -245,6 +245,7 @@ export default function AppLayout({
         {layout.isModelsView && (
           <ModelGallery
             disabled={status.isGenerating}
+            isLoading={models.isLoadingModels}
             models={models.models}
             onClose={() => layout.setActiveView('chat')}
             onSelect={actions.selectModel}

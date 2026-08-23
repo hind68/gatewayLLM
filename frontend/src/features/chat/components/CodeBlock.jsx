@@ -3,7 +3,7 @@ import { CopyIcon } from '../../../components/common/icons'
 import { detectCodeLanguage, formatLanguageName, hashText } from '../utils/markdown'
 import SyntaxHighlighter from '../config/syntaxHighlighter'
 
-export default function CodeBlock({ code, copiedKey, language, onCopy, setCopiedKey }) {
+export default function CodeBlock({ code, copiedKey, isStreaming, language, onCopy, setCopiedKey }) {
   const detectedLanguage = detectCodeLanguage(code, language)
   const copyKey = `code-${hashText(`${detectedLanguage}:${code}`)}`
   const isCopied = copiedKey === copyKey
@@ -39,12 +39,13 @@ export default function CodeBlock({ code, copiedKey, language, onCopy, setCopied
         language={detectedLanguage}
         lineNumberStyle={{
           color: 'rgba(203, 213, 225, 0.38)',
-          minWidth: '2.25em',
           paddingRight: '1em',
         }}
-        showLineNumbers={code.split('\n').length > 15}
+        lineProps={{ className: 'code-line' }}
+        showLineNumbers={!isStreaming && code.split('\n').length > 15}
         style={oneDark}
         wrapLongLines={false}
+        wrapLines
       >
         {code}
       </SyntaxHighlighter>

@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { isRenderableMarkdownImageUrl, normalizeAssistantMarkdown, normalizeMarkdownCodeFences } from '../utils/markdown'
 import CodeBlock from './CodeBlock'
 
-function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }) {
+function MarkdownContent({ content, copiedKey, direction, isStreaming, onCopy, setCopiedKey }) {
   const normalizedContent = useMemo(
     () => normalizeAssistantMarkdown(normalizeMarkdownCodeFences(content)),
     [content],
@@ -25,6 +25,7 @@ function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }
         <CodeBlock
           code={code}
           copiedKey={copiedKey}
+          isStreaming={isStreaming}
           language={match?.[1] || 'text'}
           onCopy={onCopy}
           setCopiedKey={setCopiedKey}
@@ -32,7 +33,7 @@ function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }
       )
     },
     img: MarkdownImage,
-  }), [copiedKey, onCopy, setCopiedKey])
+  }), [copiedKey, isStreaming, onCopy, setCopiedKey])
 
   return (
     <div className="markdown-body" dir={direction}>

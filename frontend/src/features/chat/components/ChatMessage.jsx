@@ -123,6 +123,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
               content={message.content || ''}
               copiedKey={copiedKey}
               direction={textDirection}
+              isStreaming={message.status === 'EN_COURS'}
               onCopy={onCopy}
               setCopiedKey={setCopiedKey}
             />
