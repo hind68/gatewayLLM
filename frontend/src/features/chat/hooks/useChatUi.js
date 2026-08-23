@@ -255,7 +255,7 @@ export default function useChatUi({
     for (const file of filesToProcess) {
       const extension = `.${file.name.split('.').pop() || ''}`.toLowerCase()
       if (!ACCEPTED_ATTACHMENT_EXTENSIONS.includes(extension)) {
-        showError(`Fichier non supporte : ${file.name}`)
+        showError(`Fichier non supporté : ${file.name}`)
         continue
       }
       accepted.push(file)
