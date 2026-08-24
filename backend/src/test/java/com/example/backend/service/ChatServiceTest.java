@@ -106,6 +106,43 @@ class ChatServiceTest {
 
     @ParameterizedTest
     @CsvSource({
+            "'Voici ![Image](/assets/check.png)'",
+            "'Voici ![Image](https://example.com/assets/check.png)'"
+    })
+    void chatSendsPublicMarkdownImageUrlsUnchangedToLiteLlm(String prompt) {
+        ChatRequest request = new ChatRequest("secure-groq", prompt);
+        when(modeleLlmRepository.existsByAliasInterneAndStatut("secure-groq", StatutModeleLlm.ACTIF)).thenReturn(true);
+        when(chatValidationService.getBannedWords(testUserId, List.of())).thenReturn(List.of());
+        when(dlpService.safeUserMessage(prompt, testUserId, testUserId.toString(), List.of())).thenReturn(prompt);
+        when(liteLlmService.chat("secure-groq", prompt)).thenReturn("OK");
+
+        chatService.chat(request, testUserId);
+
+        verify(dlpService).safeUserMessage(prompt, testUserId, testUserId.toString(), List.of());
+        verify(liteLlmService).chat("secure-groq", prompt);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "Mon email est client@example.com,Mon email est [EMAIL],client@example.com",
+            "Mon telephone est 0612345678,Mon telephone est [PHONE],0612345678",
+            "Token ghp_abcdefghijklmnopqrstuvwxyz123456,Token [TOKEN],ghp_abcdefghijklmnopqrstuvwxyz123456"
+    })
+    void chatNeverSendsOriginalSensitiveTextToLiteLlm(String original, String masked, String forbidden) {
+        ChatRequest request = new ChatRequest("secure-groq", original);
+        when(modeleLlmRepository.existsByAliasInterneAndStatut("secure-groq", StatutModeleLlm.ACTIF)).thenReturn(true);
+        when(chatValidationService.getBannedWords(testUserId, List.of())).thenReturn(List.of());
+        when(dlpService.safeUserMessage(original, testUserId, testUserId.toString(), List.of())).thenReturn(masked);
+        when(liteLlmService.chat("secure-groq", masked)).thenReturn("OK");
+
+        chatService.chat(request, testUserId);
+
+        verify(liteLlmService).chat("secure-groq", masked);
+        verify(liteLlmService, never()).chat("secure-groq", forbidden);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
             "Ma CIN est AB123456, moroccan_cin",
             "Ma carte est 4111111111111111, credit_card"
     })

@@ -2,15 +2,30 @@ package com.example.backend.controller;
 
 import com.example.backend.exceptions.DlpBlockedException;
 import com.example.backend.exceptions.DlpUnavailableException;
+import com.example.backend.integration.dlp.DlpPublicMatch;
+import com.example.backend.service.AttachmentLimitExceededException;
+import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
+/**
+ * Normalise les échecs backend en contrats d'erreur API stables pour l'UI React.
+ *
+ * Les erreurs DLP exposent volontairement seulement des métadonnées sûres :
+ * types détectés, sévérité, texte masqué et localisations publiques.
+ */
 public class ApiExceptionHandler {
 
+    /**
+     * Retourne 422 lorsque le contenu utilisateur a été analysé avec succès,
+     * mais que la politique décide qu'il ne doit pas quitter la passerelle.
+     */
     @ExceptionHandler(DlpBlockedException.class)
     @ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
     public ApiError handleDlpBlocked(DlpBlockedException exception) {
@@ -18,7 +33,11 @@ public class ApiExceptionHandler {
                 "DLP_BLOCKED",
                 "Votre message contient une donnée sensible et ne peut pas être envoyé.",
                 exception.getDetectedTypes(),
-                exception.getHighestSeverity()
+                exception.getHighestSeverity(),
+                exception.getMaskedText(),
+                exception.getMatches(),
+                null,
+                null
         );
     }
 
@@ -29,7 +48,47 @@ public class ApiExceptionHandler {
                 "DLP_UNAVAILABLE",
                 exception.getMessage(),
                 Set.of(),
+                null,
+                null,
+                List.of(),
+                null,
                 null
+        );
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    /**
+     * Préserve les statuts HTTP explicites levés par les services tout en
+     * gardant un corps de réponse cohérent avec les autres erreurs API.
+     */
+    public ResponseEntity<ApiError> handleResponseStatus(ResponseStatusException exception) {
+        HttpStatus status = HttpStatus.resolve(exception.getStatusCode().value());
+        return ResponseEntity
+                .status(status == null ? HttpStatus.BAD_REQUEST : status)
+                .body(new ApiError(
+                        "REQUEST_INVALID",
+                        exception.getReason(),
+                        Set.of(),
+                        null,
+                        null,
+                        List.of(),
+                        null,
+                        null
+                ));
+    }
+
+    @ExceptionHandler(AttachmentLimitExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleAttachmentLimitExceeded(AttachmentLimitExceededException exception) {
+        return new ApiError(
+                "ATTACHMENT_LIMIT_EXCEEDED",
+                exception.getMessage(),
+                Set.of(),
+                null,
+                null,
+                List.of(),
+                exception.getMaxFiles(),
+                exception.getReceivedFiles()
         );
     }
 
@@ -37,7 +96,11 @@ public class ApiExceptionHandler {
             String code,
             String message,
             Set<String> detectedTypes,
-            String highestSeverity
+            String highestSeverity,
+            String maskedText,
+            List<DlpPublicMatch> matches,
+            Integer maxFiles,
+            Integer receivedFiles
     ) {
     }
 }

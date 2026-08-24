@@ -95,11 +95,10 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   margin-bottom: 4px;
   color: #333333;
   direction: ltr;
- 
 }
 
 .assistant-logo {
@@ -123,6 +122,16 @@
   display: block;
 }
 
+.assistant-logo:not(:has(img)) {
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--model-badge-gradient-start), var(--model-badge-gradient-end));
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.8;
+}
+
 .assistant-meta {
   min-width: 0;
   display: flex;
@@ -132,7 +141,7 @@
 
 .assistant-meta strong {
   min-width: 0;
-  color: #2f2f2f;
+  color: #000000b5;
   font-size: 13px;
   font-weight: 620;
   line-height: 1.2;
@@ -258,12 +267,15 @@
 }
 
 .assistant-error {
-  max-width: 100%;
-  border: 1px solid rgba(185, 28, 28, 0.12);
-  border-radius: 13px;
-  background: #fff7f7;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin-right: auto;
+  border: 1px solid rgba(185, 28, 28, 0.14);
+  border-radius: 14px;
+  background: #fff8f8;
   color: #8f1d1d;
-  padding: 12px 14px;
+  padding: 13px 16px 14px;
   animation: assistant-error-in 220ms ease-out both;
 }
 
@@ -280,6 +292,7 @@
   color: #9f3434;
   font-size: 14px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
   white-space: pre-line;
 }
 
@@ -290,7 +303,7 @@
   margin-right: auto;
   background-color: #FEF2F2;
   border: 1px solid #FECACA;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: #991B1B;
   padding: 16px;
   animation: assistant-error-in 220ms ease-out both;
@@ -311,8 +324,8 @@
 
 .dlp-alert p {
   margin: 4px 0 0;
-  color: #B91C1C;
-  font-size: 13px;
+  color: #881337;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-line;
 }
@@ -373,33 +386,47 @@
 
 .dlp-alert-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #FECACA;
+  padding: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(225, 29, 72, 0.08);
 }
 
 .dlp-alert-tabs button {
-  background: #FFFFFF;
-  border: 1px solid #FCA5A5;
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
   border-radius: 6px;
-  color: #991B1B;
+  background: transparent;
+  color: #BE123C;
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
-  padding: 6px 12px;
-  transition: all 0.2s ease;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 7px 10px;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
 }
 
 .dlp-alert-tabs button:hover {
-  background-color: #FEE2E2;
+  color: #9F1239;
 }
 
 .dlp-alert-tabs button:disabled {
   cursor: not-allowed;
-  opacity: 0.48;
+  opacity: 0.5;
+}
+
+.dlp-alert-tabs button.is-active {
+  background: #FFFFFF;
+  color: #9F1239;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .dlp-file-panel {
@@ -417,7 +444,7 @@
 
 .dlp-detail-panel {
   margin-top: 12px;
-  animation: assistant-error-in 180ms ease-out both;
+  animation: none;
 }
 
 .dlp-detail-heading {
@@ -426,7 +453,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  color: #991B1B;
+  color: #334155;
   font-size: 13px;
   font-weight: 650;
 }
@@ -435,7 +462,7 @@
   max-height: 320px;
   overflow: auto;
   margin: 0;
-  background-color: #111827;
+  background-color: #1E293B;
   border: 1px solid #374151;
   border-radius: 6px;
   color: #E5E7EB;
@@ -452,59 +479,68 @@
 
 .dlp-code-view mark {
   border-radius: 4px;
-  background-color: rgba(253, 224, 71, 0.15);
-  border: 1px solid rgba(253, 224, 71, 0.3);
-  color: #FDE047;
+  background: #eaa95e19;
+  border: 1px solid #eaa95e4d;
+  color: #eaa95e;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 0 5px;
   font-size: 12px;
-  margin-left: 6px;
+  line-height: 1.25;
+  margin-left: 4px;
 }
 
 .dlp-detections {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 16px 0 0;
-  border-top: 1px solid #FECACA;
-  padding: 16px 0 0;
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0 10px;
   list-style: none;
 }
 
 .dlp-detections li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  color: #7F1D1D;
-  font-size: 13px;
+  border-bottom: 1px solid #E2E8F0;
+  color: #475569;
+  font-size: 12.5px;
+  line-height: 1.35;
+  padding: 9px 2px;
+}
+
+.dlp-detections li:last-child {
+  border-bottom: 0;
 }
 
 .dlp-detection-badge {
-  border-radius: 6px;
-  border: 1px solid #FEE2E2;
-  background-color: #FEF2F2;
-  color: #DC2626;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: #334155;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 650;
   letter-spacing: 0;
-  padding: 4px 8px;
+  padding: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dlp-detection-type {
-  color: #7F1D1D;
-  font-size: 13px;
+  display: none;
 }
 
 .dlp-detections small {
-  margin-left: auto;
-  color: #9CA3AF;
+  color: #64748B;
   font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .dlp-sensitive-warning {
   margin-bottom: 8px !important;
-  color: #7f1d1d !important;
+  color: #64748B !important;
   font-size: 13px !important;
   font-weight: 620;
 }
@@ -643,7 +679,7 @@
   justify-content: flex-end;
   gap: 4px;
   margin: 4px 0 0 auto !important;
-  color: #D97706;
+  color: #a05600;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -848,6 +884,10 @@
   width: 100%;
   max-width: 560px;
   min-width: 0;
+  background-color: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  color: #991B1B;
   margin-right: auto;
   overflow: hidden;
 }
@@ -890,13 +930,17 @@
   margin-inline: auto;
   gap: 12px;
   overflow: hidden;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  background-color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(248, 113, 113, 0.18);
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.56);
   padding: 8px 12px;
-  box-shadow: 0 1px 2px rgba(127, 29, 29, 0.08);
+  box-shadow:
+    0 1px 2px rgba(127, 29, 29, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
   transition:
     background-color 0.2s ease,
-    border-color 0.2s ease;
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .dlp-file-panel .file-message-card.dlp-file-card .file-type-icon {
@@ -946,13 +990,18 @@
 }
 
 .dlp-file-panel .file-message-card.dlp-file-card.is-clickable:hover {
-  border-color: rgba(239, 68, 68, 0.4);
-  background-color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(248, 113, 113, 0.32);
+  background-color: rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 4px 10px rgba(127, 29, 29, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .dlp-file-panel .file-message-card.dlp-file-card.is-clickable:focus-visible {
-  border-color: rgba(239, 68, 68, 0.4);
-  background-color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(248, 113, 113, 0.34);
+  background-color: rgba(255, 255, 255, 0.78);
+  outline: 2px solid rgba(248, 113, 113, 0.24);
+  outline-offset: 2px;
 }
 
 .dlp-attachments-toggle {

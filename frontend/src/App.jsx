@@ -22,6 +22,8 @@ function App() {
   const setShowAdminDashboard = useCallback((nextValue) => {
     const currentValue = showAdminDashboard
     const resolvedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue
+    if (resolvedValue === currentValue) return
+
     const updateView = () => {
       flushSync(() => {
         setShowAdminDashboardState(resolvedValue)

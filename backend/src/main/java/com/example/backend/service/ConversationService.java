@@ -29,28 +29,47 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
+/**
+ * Coordonne le cycle de vie du chat pour la passerelle de démonstration :
+ * propriété des conversations, validation DLP, persistance des messages,
+ * streaming LiteLLM et diffusion SSE.
+ *
+ * <p>Le service traite volontairement le DLP comme une barrière stricte avant
+ * tout appel au modèle. Si la couche DLP bloque le contenu ou devient
+ * indisponible, l'entrée utilisateur n'est pas envoyée à LiteLLM.</p>
+ */
 public class ConversationService {
 
+    private static final Logger log = LoggerFactory.getLogger(ConversationService.class);
     private static final Set<RoleMessage> CONTEXT_ROLES = Set.of(RoleMessage.USER, RoleMessage.ASSISTANT);
+    public static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;
+    public static final String MAX_ATTACHMENTS_MESSAGE = "Vous pouvez joindre jusqu'à 10 fichiers par message. Supprimez un fichier avant d'en ajouter un autre.";
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
@@ -61,6 +80,7 @@ public class ConversationService {
     private final MessagePersistenceService messagePersistenceService;
     private final ChatValidationService chatValidationService;
     private final AttachmentService attachmentService;
+    private final ObjectMapper objectMapper;
     private final int maxContextMessages;
     private boolean legacyModelLookup;
 
@@ -75,6 +95,7 @@ public class ConversationService {
             MessagePersistenceService messagePersistenceService,
             ChatValidationService chatValidationService,
             AttachmentService attachmentService,
+            ObjectMapper objectMapper,
             @Value("${gateway.context.max-messages:20}") int maxContextMessages
     ) {
         this.conversationRepository = conversationRepository;
@@ -86,6 +107,7 @@ public class ConversationService {
         this.messagePersistenceService = messagePersistenceService;
         this.chatValidationService = chatValidationService;
         this.attachmentService = attachmentService;
+        this.objectMapper = objectMapper;
         this.maxContextMessages = maxContextMessages;
         this.legacyModelLookup = false;
     }
@@ -104,7 +126,7 @@ public class ConversationService {
     ) {
         this(conversationRepository, messageRepository, modeleLlmRepository, currentUserService,
                 liteLlmService, dlpService, messagePersistenceService, chatValidationService,
-                null, maxContextMessages);
+                null, new ObjectMapper(), maxContextMessages);
         this.legacyModelLookup = true;
     }
 
@@ -181,6 +203,9 @@ public class ConversationService {
         Conversation conversation = ownedConversation(id, jwt);
         Long conversationId = id;
         Utilisateur user = conversation.getUtilisateur();
+        if (attachmentService != null) {
+            attachmentService.deleteFilesForConversation(conversation);
+        }
         messageRepository.clearResponseLinksByConversationId(conversationId);
         messageRepository.deleteAllByConversationId(conversationId);
         messageRepository.flush();
@@ -198,8 +223,16 @@ public class ConversationService {
     }
 
     @Transactional
+    /**
+     * Prépare une paire de messages utilisateur/assistant pour le streaming.
+     *
+     * <p>Cette méthode persiste d'abord le message utilisateur sécurisé, crée
+     * un message assistant en cours, puis retourne le contexte exact qui peut
+     * être envoyé à LiteLLM. Le contenu sensible est soit masqué par le DLP,
+     * soit bloqué avant la fin de cette préparation.</p>
+     */
     public StreamPreparation prepareStream(Long conversationId, SendMessageRequest request, Jwt jwt) {
-        String content = request.content().trim();
+        String content = request.content() == null ? "" : request.content().trim();
         if (content.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "Message content must not be blank");
         }
@@ -217,7 +250,6 @@ public class ConversationService {
         List<String> bannedWords = chatValidationService.getBannedWords(userId, roles);
 
         String safeContent = dlpService.safeUserMessage(content, userId, userId.toString(), bannedWords);
-
         int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
         Message userMessage = messageRepository.save(new Message(
                 conversation,
@@ -254,6 +286,10 @@ public class ConversationService {
     }
 
     @Transactional
+    /**
+     * Diffuse une réponse au frontend via SSE et persiste l'état final de
+     * l'assistant séparément lorsque LiteLLM termine ou échoue.
+     */
     public SseEmitter streamMessage(Long conversationId, SendMessageRequest request, Jwt jwt) {
         SseEmitter emitter = new SseEmitter(0L);
         StreamPreparation preparation;
@@ -288,13 +324,26 @@ public class ConversationService {
                     trySend(emitter, "token", token);
                 },
                 () -> {
-                    messagePersistenceService.completeAssistantMessage(preparation.assistantMessageId(), answer.toString());
+                    // Le callback de stream s'exécute après le retour de cette
+                    // méthode, donc la persistance a sa propre transaction. Un
+                    // échec de persistance ne doit jamais empêcher l'émetteur
+                    // SSE de se terminer, sinon le client reste bloqué (pas de
+                    // timeout sur cet émetteur).
+                    try {
+                        messagePersistenceService.completeAssistantMessage(preparation.assistantMessageId(), answer.toString());
+                    } catch (RuntimeException persistenceError) {
+                        log.warn("Failed to persist completed assistant message {}", preparation.assistantMessageId(), persistenceError);
+                    }
                     trySend(emitter, "done", new StreamDoneResponse(preparation.assistantMessageId(), answer.toString()));
                     emitter.complete();
                 },
                 error -> {
                     String fallback = answer.isEmpty() ? "Erreur pendant le streaming LiteLLM." : answer.toString();
-                    messagePersistenceService.failAssistantMessage(preparation.assistantMessageId(), fallback);
+                    try {
+                        messagePersistenceService.failAssistantMessage(preparation.assistantMessageId(), fallback);
+                    } catch (RuntimeException persistenceError) {
+                        log.warn("Failed to persist failed assistant message {}", preparation.assistantMessageId(), persistenceError);
+                    }
                     trySend(emitter, "error", "Erreur pendant le streaming LiteLLM.");
                     emitter.complete();
                 }
@@ -306,16 +355,22 @@ public class ConversationService {
     @Transactional
     public SseEmitter streamMessageWithFiles(Long conversationId, String content, List<MultipartFile> files, Jwt jwt) {
         SseEmitter emitter = new SseEmitter(0L);
+        List<MultipartFile> safeFiles = files == null ? List.of() : files.stream()
+                .filter(file -> file != null && !file.isEmpty())
+                .toList();
+        if (safeFiles.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw new AttachmentLimitExceededException(MAX_ATTACHMENTS_PER_MESSAGE, safeFiles.size());
+        }
         try {
             Conversation conversation = ownedConversation(conversationId, jwt);
             UUID userId = currentUserService.keycloakId(jwt);
             List<String> roles = currentUserService.roles(jwt);
             chatValidationService.validateLlmAccess(userId, conversation.getModele().getAliasInterne(), roles);
             List<String> bannedWords = chatValidationService.getBannedWords(userId, roles);
-            DlpSafeMessage safeMessage = dlpService.safeMessageForLlm(content, files, userId, userId.toString(), bannedWords);
-            StreamPreparation preparation = prepareStreamWithSafeContent(conversationId, content, safeMessage, jwt);
+            DlpSafeMessage safeMessage = dlpService.safeMessageForLlm(content, safeFiles, userId, userId.toString(), bannedWords);
+            StreamPreparation preparation = prepareStreamWithSafeContent(conversationId, content, safeMessage, bannedWords, jwt);
             Message userMessage = messageRepository.findById(preparation.userMessage().id()).orElseThrow();
-            List<AttachmentMetadata> attachments = attachmentService.store(userMessage, files, safeMessage.attachments());
+            List<AttachmentMetadata> attachments = attachmentService.store(userMessage, safeFiles, safeMessage.attachments());
             userMessage.setAttachmentMetadataJson(serializeAttachmentMetadata(attachments));
             MessageResponse userResponse = withAttachments(preparation.userMessage(), attachments);
             trySend(emitter, "message", userResponse);
@@ -323,7 +378,7 @@ public class ConversationService {
             streamPrepared(emitter, preparation);
         } catch (DlpBlockedException exception) {
             try {
-                BlockedUploadResult blocked = persistBlockedUpload(conversationId, content, files, exception, jwt);
+                BlockedUploadResult blocked = persistBlockedUpload(conversationId, content, safeFiles, exception, jwt);
                 trySend(emitter, "error", streamError(exception, blocked));
             } catch (RuntimeException persistenceException) {
                 trySend(emitter, "error", streamError(exception));
@@ -345,7 +400,7 @@ public class ConversationService {
         String persistedContent = content == null || content.isBlank() ? "Pieces jointes bloquees par le controle DLP" : content.trim();
         int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
         Message userMessage = messageRepository.save(new Message(conversation, RoleMessage.USER, nextOrder, StatutMessage.DLP_BLOCKED, persistedContent, null));
-        userMessage.blockByDlp(exception.getHighestSeverity(), String.join(",", exception.getDetectedTypes()), serializeDlpMatches(exception.getMatches()), exception.getMaskedText());
+        userMessage.blockByDlp(exception.getHighestSeverity(), serializeDetectedTypes(exception.getDetectedTypes()), serializeDlpMatches(exception.getMatches()), exception.getMaskedText());
         if ("Nouvelle conversation".equals(conversation.getTitre())) conversation.rename(titleFrom(persistedContent));
         conversation.touchLastMessageAt(Instant.now());
         List<AttachmentMetadata> metadata = attachmentService.store(userMessage, files, exception.getAttachments());
@@ -372,7 +427,7 @@ public class ConversationService {
         ));
         userMessage.blockByDlp(
                 exception.getHighestSeverity(),
-                String.join(",", exception.getDetectedTypes()),
+                serializeDetectedTypes(exception.getDetectedTypes()),
                 serializeDlpMatches(exception.getMatches()),
                 exception.getMaskedText()
         );
@@ -384,7 +439,13 @@ public class ConversationService {
     }
 
     @Transactional
-    private StreamPreparation prepareStreamWithSafeContent(Long conversationId, String originalContent, DlpSafeMessage safeMessage, Jwt jwt) {
+    private StreamPreparation prepareStreamWithSafeContent(
+            Long conversationId,
+            String originalContent,
+            DlpSafeMessage safeMessage,
+            List<String> bannedWords,
+            Jwt jwt
+    ) {
         Conversation conversation = ownedConversation(conversationId, jwt);
         if (conversation.getStatut() != StatutConversation.ACTIVE) throw new ResponseStatusException(BAD_REQUEST, "Conversation is archived");
         ModeleLlm generationModel = conversation.getModele();
@@ -394,7 +455,7 @@ public class ConversationService {
         if ("Nouvelle conversation".equals(conversation.getTitre())) conversation.rename(titleFrom(persistedContent));
         Message assistantMessage = messageRepository.save(new Message(conversation, RoleMessage.ASSISTANT, nextOrder + 1, StatutMessage.EN_COURS, "", userMessage, generationModel));
         conversation.touchLastMessageAt(Instant.now());
-        List<LiteLlmMessage> context = buildContext(conversation, userMessage, safeMessage.safePrompt(), List.of());
+        List<LiteLlmMessage> context = buildContext(conversation, userMessage, safeMessage.safePrompt(), bannedWords);
         return new StreamPreparation(generationModel.getAliasInterne(), assistantMessage.getId(), toMessageResponse(userMessage), toMessageResponse(assistantMessage), context);
     }
 
@@ -404,12 +465,20 @@ public class ConversationService {
             answer.append(token);
             trySend(emitter, "token", token);
         }, () -> {
-            messagePersistenceService.completeAssistantMessage(preparation.assistantMessageId(), answer.toString());
+            try {
+                messagePersistenceService.completeAssistantMessage(preparation.assistantMessageId(), answer.toString());
+            } catch (RuntimeException persistenceError) {
+                log.warn("Failed to persist completed assistant message {}", preparation.assistantMessageId(), persistenceError);
+            }
             trySend(emitter, "done", new StreamDoneResponse(preparation.assistantMessageId(), answer.toString()));
             emitter.complete();
         }, error -> {
             String fallback = answer.isEmpty() ? "Erreur pendant le streaming LiteLLM." : answer.toString();
-            messagePersistenceService.failAssistantMessage(preparation.assistantMessageId(), fallback);
+            try {
+                messagePersistenceService.failAssistantMessage(preparation.assistantMessageId(), fallback);
+            } catch (RuntimeException persistenceError) {
+                log.warn("Failed to persist failed assistant message {}", preparation.assistantMessageId(), persistenceError);
+            }
             trySend(emitter, "error", "Erreur pendant le streaming LiteLLM.");
             emitter.complete();
         });
@@ -435,22 +504,7 @@ public class ConversationService {
     }
 
     private String serializeAttachmentMetadata(List<AttachmentMetadata> attachments) {
-        return attachments == null ? "" : attachments.stream().map(item -> item.id() + "\t" + item.filename() + "\t" + item.mimeType() + "\t" + item.size() + "\t" + item.decision() + "\t" + item.safeCharacters() + "\t" + item.estimatedTokens() + "\t" + item.extractionStatus()).collect(java.util.stream.Collectors.joining("\n"));
-    }
-
-    private String serializeDlpMatches(List<DlpPublicMatch> matches) {
-        if (matches == null || matches.isEmpty()) {
-            return "";
-        }
-        return matches.stream()
-                .map(match -> String.join("|",
-                        valueOrEmpty(match.source()),
-                        valueOrEmpty(match.id()),
-                        valueOrEmpty(match.type()),
-                        valueOrEmpty(match.start()),
-                        valueOrEmpty(match.end()),
-                        valueOrEmpty(match.severity())))
-                .collect(java.util.stream.Collectors.joining("\n"));
+        return serializeAttachments(attachments);
     }
 
     private List<DlpPublicMatch> enrichMatchesWithAttachmentIds(List<DlpPublicMatch> matches, List<AttachmentMetadata> attachments) {
@@ -549,7 +603,13 @@ public class ConversationService {
         if (isSameMessage(message, currentUserMessage)) {
             return currentSafeContent;
         }
-        return dlpService.safeTextForLlm(message.getContenu(), message.getConversation().getUtilisateur().getExternalId(), bannedWords);
+        // Repasser l'historique stocké par le DLP avant de construire le
+        // contexte empêche les anciens contenus de contourner la politique.
+        return dlpService.safeTextForLlm(
+                message.getContenu(),
+                message.getConversation().getUtilisateur().getExternalId(),
+                bannedWords
+        );
     }
 
     private boolean isSameMessage(Message candidate, Message reference) {
@@ -600,19 +660,250 @@ public class ConversationService {
                 modelAlias,
                 modelDisplayName,
                 message.getDlpHighestSeverity(),
-                List.of(),
-                List.of(),
+                parseDetectedTypes(message.getDlpDetectedTypes()),
+                parseDlpMatches(message.getDlpMatches()),
                 message.getDlpMaskedText(),
-                List.of(),
+                parseAttachments(message.getAttachmentMetadataJson()),
                 message.getCreatedAt(),
                 message.getUpdatedAt()
         );
+    }
+
+    private String serializeDetectedTypes(Set<String> detectedTypes) {
+        if (detectedTypes == null || detectedTypes.isEmpty()) {
+            return "";
+        }
+        return detectedTypes.stream()
+                .filter(type -> type != null && !type.isBlank())
+                .sorted(Comparator.naturalOrder())
+                .collect(Collectors.joining(","));
+    }
+
+    private List<String> parseDetectedTypes(String detectedTypes) {
+        if (detectedTypes == null || detectedTypes.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(detectedTypes.split(","))
+                .map(String::trim)
+                .filter(type -> !type.isBlank())
+                .toList();
+    }
+
+    private String serializeDlpMatches(List<DlpPublicMatch> matches) {
+        if (matches == null || matches.isEmpty()) {
+            return "";
+        }
+        return matches.stream()
+                .map(match -> valueOrEmptyLong(match.attachmentId()) + "\t"
+                        + encodeMatchField(match.source()) + "\t"
+                        + encodeMatchField(match.id()) + "\t"
+                        + encodeMatchField(match.type()) + "\t"
+                        + valueOrEmpty(match.start()) + "\t"
+                        + valueOrEmpty(match.end()) + "\t"
+                        + valueOrEmpty(match.lineNumber()) + "\t"
+                        + encodeMatchField(match.severity()) + "\t"
+                        + encodeMatchField(match.placeholder()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private static final TypeReference<List<AttachmentMetadata>> ATTACHMENT_METADATA_LIST_TYPE = new TypeReference<>() {
+    };
+
+    private String serializeAttachments(List<AttachmentMetadata> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return "";
+        }
+        return objectMapper.writeValueAsString(attachments);
+    }
+
+    private List<AttachmentMetadata> parseAttachments(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        if (!value.stripLeading().startsWith("[")) {
+            return Arrays.stream(value.split("\\R"))
+                    .map(this::parseLegacyAttachment)
+                    .filter(attachment -> attachment != null)
+                    .toList();
+        }
+        try {
+            return objectMapper.readValue(value, ATTACHMENT_METADATA_LIST_TYPE);
+        } catch (JacksonException exception) {
+            log.warn("Unable to parse stored attachment metadata; returning empty list", exception);
+            return List.of();
+        }
+    }
+
+    private AttachmentMetadata parseLegacyAttachment(String line) {
+        String[] parts = line.split("\\t", -1);
+        if (parts.length == 7) {
+            return new AttachmentMetadata(
+                    null,
+                    parts[0],
+                    parts[1],
+                    parseLong(parts[2]),
+                    parts[3],
+                    parseInteger(parts[4]) == null ? 0 : parseInteger(parts[4]),
+                    parseInteger(parts[5]) == null ? 0 : parseInteger(parts[5]),
+                    parts[6]
+            );
+        }
+        if (parts.length != 8) {
+            return null;
+        }
+        return new AttachmentMetadata(
+                parseLongObject(parts[0]),
+                parts[1],
+                parts[2],
+                parseLong(parts[3]),
+                parts[4],
+                parseInteger(parts[5]) == null ? 0 : parseInteger(parts[5]),
+                parseInteger(parts[6]) == null ? 0 : parseInteger(parts[6]),
+                parts[7]
+        );
+    }
+
+    private List<DlpPublicMatch> parseDlpMatches(String matches) {
+        if (matches == null || matches.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(matches.split("\\R"))
+                .map(this::parseDlpMatch)
+                .filter(match -> match != null)
+                .toList();
+    }
+
+    private DlpPublicMatch parseDlpMatch(String line) {
+        if (line.indexOf('\t') < 0 && line.indexOf('|') >= 0) {
+            String[] legacy = line.split("\\|", -1);
+            if (legacy.length == 6) {
+                return new DlpPublicMatch(
+                        null,
+                        legacy[0],
+                        legacy[1],
+                        legacy[2],
+                        parseInteger(legacy[3]),
+                        parseInteger(legacy[4]),
+                        null,
+                        legacy[5],
+                        null
+                );
+            }
+        }
+        String[] parts = line.split("\\t", -1);
+        if (parts.length == 5) {
+            return new DlpPublicMatch(
+                    null,
+                    null,
+                    null,
+                    decodeMatchField(parts[0]),
+                    parseInteger(parts[1]),
+                    parseInteger(parts[2]),
+                    parseInteger(parts[3]),
+                    null,
+                    decodeMatchField(parts[4])
+            );
+        }
+        if (parts.length == 7) {
+            return new DlpPublicMatch(
+                    parseLongObject(parts[0]),
+                    decodeMatchField(parts[1]),
+                    null,
+                    decodeMatchField(parts[2]),
+                    parseInteger(parts[3]),
+                    parseInteger(parts[4]),
+                    parseInteger(parts[5]),
+                    null,
+                    decodeMatchField(parts[6])
+            );
+        }
+        if (parts.length == 8) {
+            return new DlpPublicMatch(
+                    parseLongObject(parts[0]),
+                    decodeMatchField(parts[1]),
+                    null,
+                    decodeMatchField(parts[2]),
+                    parseInteger(parts[3]),
+                    parseInteger(parts[4]),
+                    parseInteger(parts[5]),
+                    decodeMatchField(parts[6]),
+                    decodeMatchField(parts[7])
+            );
+        }
+        if (parts.length != 9) {
+            return null;
+        }
+        return new DlpPublicMatch(
+                parseLongObject(parts[0]),
+                decodeMatchField(parts[1]),
+                decodeMatchField(parts[2]),
+                decodeMatchField(parts[3]),
+                parseInteger(parts[4]),
+                parseInteger(parts[5]),
+                parseInteger(parts[6]),
+                decodeMatchField(parts[7]),
+                decodeMatchField(parts[8])
+        );
+    }
+
+    private String encodeMatchField(String value) {
+        // Les métadonnées DLP restent dans des colonnes texte pour rester
+        // compatibles avec les migrations existantes ; l'échappement évite que
+        // les tabulations et retours ligne cassent le parsing.
+        return value == null ? "" : value.replace("%", "%25").replace("\t", "%09").replace("\n", "%0A").replace("\r", "%0D");
+    }
+
+    private String decodeMatchField(String value) {
+        return value.replace("%0D", "\r").replace("%0A", "\n").replace("%09", "\t").replace("%25", "%");
+    }
+
+    private String valueOrEmpty(Integer value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private String valueOrEmptyLong(Long value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private Integer parseInteger(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private long parseLong(String value) {
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            return 0L;
+        }
+    }
+
+    private Long parseLongObject(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private void trySend(SseEmitter emitter, String event, Object value) {
         try {
             emitter.send(SseEmitter.event().name(event).data(value));
         } catch (IOException ignored) {
+            // Les déconnexions navigateur sont normales en SSE ; terminer
+            // l'emitter suffit car le callback LiteLLM gère la persistance.
             emitter.complete();
         }
     }

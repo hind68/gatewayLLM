@@ -21,7 +21,7 @@ const COMPACT_THREAT_LIMIT = 6
 const PREVIEW_UNAVAILABLE = 'Format non prévisualisable'
 const EXTRACTION_UNAVAILABLE = 'Extraction impossible'
 
-export default function DocumentInspectorPanel({ attachment: inspectionTarget, closing = false, onAttachSecure, onClose, width }) {
+export default function DocumentInspectorPanel({ attachment: inspectionTarget, closing = false, hidden = false, onAttachSecure, onClose, width }) {
   const target = useMemo(() => normalizeTarget(inspectionTarget), [inspectionTarget])
   const attachment = target.attachment
   const attachmentKey = attachmentIdentity(attachment)
@@ -34,8 +34,13 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
   const [showTextSizeMenu, setShowTextSizeMenu] = useState(false)
   const textSizeControlRef = useRef(null)
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  // Reset per-attachment view state during render (React's documented pattern
+  // for "adjusting state when a prop changes") instead of an effect, so
+  // switching documents never renders one frame of the previous document's
+  // state before the reset commits.
+  const [resetKey, setResetKey] = useState(attachmentKey)
+  if (resetKey !== attachmentKey) {
+    setResetKey(attachmentKey)
     setActiveTab(initialMode(target))
     setOriginalState(initialOriginalState())
     setInspectionState(initialInspectionState(target))
@@ -43,8 +48,7 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
     setCopySucceeded(false)
     setFontSize(READER_FONT_SIZE)
     setShowTextSizeMenu(false)
-  }, [attachmentKey])
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }
 
   useEffect(() => {
     if (!attachment) return undefined
@@ -87,6 +91,10 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
       controller.abort()
       if (previewUrl) URL.revokeObjectURL(previewUrl)
     }
+    // attachmentKey is a deliberate stand-in for attachment/target identity:
+    // both are recreated on every parent render, and depending on them
+    // directly would refetch the document on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachmentKey])
 
   useEffect(() => {
@@ -158,6 +166,9 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
       cancelled = true
       controller.abort()
     }
+    // See the loadOriginal effect above: attachmentKey intentionally stands
+    // in for attachment/target identity to avoid refetching on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachmentKey])
 
   useEffect(() => {
@@ -187,6 +198,9 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
       cancelled = true
       controller.abort()
     }
+    // See the loadOriginal effect above: attachmentKey intentionally stands
+    // in for attachment/target identity to avoid refetching on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachmentKey])
 
   const filename = attachment?.filename || attachment?.name || 'Document'
@@ -239,7 +253,12 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
   if (!attachment) return null
 
   return (
-    <aside className={`document-inspector-panel ${closing ? 'is-closing' : ''}`} style={{ width }} aria-label="Inspection du document">
+    <aside
+      aria-hidden={hidden || undefined}
+      aria-label="Inspection du document"
+      className={`document-inspector-panel ${closing ? 'is-closing' : ''} ${hidden ? 'is-admin-hidden' : ''}`.trim()}
+      style={{ width }}
+    >
       <header className="document-inspector-header">
         <div className="document-inspector-title">
           <strong title={filename}>{filename}</strong>
@@ -307,7 +326,7 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
             <span>Copier</span>
           </button>
           <button type="button" className="document-icon-action labeled" title={hasSecureText ? 'Télécharger la version sécurisée' : 'Version sécurisée indisponible'} aria-label="Télécharger la version sécurisée" disabled={!hasSecureText} onClick={handleDownloadSecure}>
-            <img src="/assets/downloads.png" alt="" aria-hidden="true" />
+            <img src="/assets/download.png" alt="" aria-hidden="true" />
             <span>Télécharger</span>
           </button>
           <button type="button" className="document-icon-action primary labeled" title={hasSecureText ? 'Ajouter la version sécurisée aux pièces jointes' : 'Version sécurisée indisponible'} aria-label="Ajouter la version sécurisée aux pièces jointes" disabled={!hasSecureText} onClick={handleAttachSecureVersion}>
@@ -382,11 +401,15 @@ function InspectionDocumentView({ state }) {
   const rows = lineRows(state.text, highlightableMatches)
   function selectMatch(match) {
     const id = matchKey(match)
+    if (selectedMatchId === id) {
+      setSelectedMatchId('')
+      return
+    }
     const line = lineNumberForMatch(state.text, match)
     setSelectedMatchId(id)
     const lineElement = Number.isInteger(line) ? document.getElementById(`line-${line}`) : null
     const matchElement = document.querySelector(`[data-match-id="${CSS.escape(id)}"]`)
-    ;(lineElement || matchElement)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    ;(matchElement || lineElement)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
   }
 
   return (
@@ -477,11 +500,11 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
             />
           </button>
         )}
-        <div className="document-threat-filters" aria-label="Filtres des menaces">
+        <div className="document-threat-filters" aria-label="Filtres des menaces par criticité">
           {filters.map((item) => (
             <button
               type="button"
-              className={filter === item.key ? 'active' : ''}
+              className={`severity-${item.key} ${filter === item.key ? 'active' : ''}`.trim()}
               key={item.key}
               onClick={() => {
                 setFilter(item.key)
@@ -504,6 +527,7 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
             <button
               type="button"
               aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
+              aria-pressed={selectedMatchId === id}
               className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
               key={`${id}-${index}`}
               data-target-match-id={id}
@@ -549,6 +573,7 @@ function renderHighlightedParts(parts, selectedMatchId, onSelect) {
     const id = matchKey(part.match)
     return (
       <mark
+        aria-pressed={selectedMatchId === id}
         className={`document-dlp-mark severity-${severityClass(part.match)} ${selectedMatchId === id ? 'is-selected' : ''}`}
         data-match-id={id}
         key={index}

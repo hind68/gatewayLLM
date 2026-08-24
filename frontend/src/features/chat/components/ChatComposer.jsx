@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { PlusIcon, StopIcon } from '../../../components/common/icons'
 import FileAttachmentCard from './FileAttachmentCard'
 import { ACCEPTED_ATTACHMENT_EXTENSIONS } from '../hooks/useChatUi'
+import { pendingAttachmentKey } from '../utils/pendingAttachments'
 
 export default function ChatComposer({
   canSend,
@@ -50,7 +51,7 @@ export default function ChatComposer({
             {displayAttachments.map((file, index) => (
               <FileAttachmentCard
                 attachment={file}
-                key={`${file.name}-${file.size}-${index}`}
+                key={pendingAttachmentKey(file)}
                 onInspect={onInspectDocument}
                 onRemove={() => !isGenerating && onRemoveFile(index)}
                 variant="chip"

@@ -2691,3 +2691,36 @@ body:has(.chat-main.admin-main)::-webkit-scrollbar-thumb,
   background: #cfd2d6 !important;
   background-clip: padding-box !important;
 }
+
+/* Use the shared light-blue control surface instead of rendering secondary
+   admin actions as gray or white buttons on white cards. */
+.admin-shell .admin-button.secondary,
+.admin-modal .admin-button.secondary,
+.admin-shell .admin-pagination button,
+.admin-shell .role-selector button:not(.active),
+.admin-shell .audit-view-switch button:not(.active),
+.admin-shell .role-check:not(.selected) {
+  border-color: var(--ui-blue-150);
+  background: var(--ui-blue-100);
+  color: var(--ui-blue-900);
+}
+
+.admin-shell .admin-button.secondary:hover:not(:disabled),
+.admin-modal .admin-button.secondary:hover:not(:disabled),
+.admin-shell .admin-pagination button:hover:not(:disabled),
+.admin-shell .role-selector button:not(.active):hover,
+.admin-shell .audit-view-switch button:not(.active):hover,
+.admin-shell .role-check:not(.selected):hover {
+  border-color: #cbdcf3;
+  background: var(--ui-blue-150);
+  color: var(--ui-blue-900);
+}
+
+.admin-shell .admin-button.secondary:disabled,
+.admin-modal .admin-button.secondary:disabled,
+.admin-shell .admin-pagination button:disabled {
+  border-color: var(--ui-blue-150);
+  background: var(--ui-blue-100);
+  color: #94a3b8;
+  opacity: 1;
+}

@@ -182,21 +182,16 @@ export default function AppLayout({
       {layout.isSearchModalOpen && (
         <SearchModal
           inputRef={layout.searchInputRef}
-          conversations={state.conversations}
-          isLoadingHistory={state.isLoadingHistory}
-          modelFilter={state.modelFilter}
           models={models.models}
           onClose={() => layout.setIsSearchModalOpen(false)}
           openConversation={actions.openConversation}
-          search={state.search}
-          setModelFilter={filters.setModelFilter}
-          setSearch={filters.setSearch}
-          setShowArchived={filters.setShowArchived}
-          showArchived={state.showArchived}
         />
       )}
 
-      <div className="chat-workspace">
+      <div
+        aria-hidden={layout.isSearchModalOpen || undefined}
+        className={`chat-workspace ${layout.isSearchModalOpen ? 'is-search-covered' : ''}`}
+      >
       <main
         className={`chat-main ${
           admin?.showAdminDashboard
@@ -270,6 +265,7 @@ export default function AppLayout({
         {layout.isModelsView && (
           <ModelGallery
             disabled={status.isGenerating}
+            isLoading={models.isLoadingModels}
             models={models.models}
             onClose={() => layout.setActiveView('chat')}
             onSelect={actions.selectModel}
@@ -347,17 +343,19 @@ export default function AppLayout({
       {inspectedDocument && (
         <>
           <div
-            className="document-panel-resizer"
+            aria-hidden={admin?.showAdminDashboard || undefined}
+            className={`document-panel-resizer ${admin?.showAdminDashboard ? 'is-admin-hidden' : ''}`}
             role="separator"
             aria-orientation="vertical"
             aria-label="Redimensionner le panneau d'inspection"
-            tabIndex={0}
+            tabIndex={admin?.showAdminDashboard ? -1 : 0}
             onPointerDown={handleInspectorResizePointerDown}
           />
           <DocumentInspectorPanel
             attachment={inspectedDocument}
             closing={isInspectorClosing}
             conversationId={activeConversation?.id}
+            hidden={Boolean(admin?.showAdminDashboard)}
             key={`${inspectedDocument.attachment?.id || inspectedDocument.id || inspectedDocument.attachment?.filename || inspectedDocument.filename || inspectedDocument.name}-${inspectedDocument.mode || 'view'}`}
             onAttachSecure={attachSecureVersion}
             onClose={closeInspector}

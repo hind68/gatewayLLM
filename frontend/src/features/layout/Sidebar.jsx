@@ -150,16 +150,9 @@ export default function Sidebar({
                   title="Rechercher"
                   aria-label="Rechercher"
                   onClick={() => {
-                    closeAdminDashboard()
                     setIsSearchModalOpen(true)
-
-                    if (isSidebarOpen) {
-                      setIsAccountMenuOpen(false)
-                      setActiveView('chat')
-                      setCollapsedPanel(null)
-                    } else {
-                      setCollapsedPanel(null)
-                    }
+                    setIsAccountMenuOpen(false)
+                    setCollapsedPanel(null)
                   }}
                 >
                   <span className="sidebar-icon" aria-hidden="true">
@@ -208,6 +201,10 @@ export default function Sidebar({
                     setSearch('')
                     setOpenMenuId(null)
                   } else {
+                    setActiveView('chat')
+                    setModelFilter('')
+                    setSearch('')
+                    setOpenMenuId(null)
                     toggleCollapsedPanel('history')
                   }
                 }}

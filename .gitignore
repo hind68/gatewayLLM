@@ -14,7 +14,6 @@ __pycache__/
 venv/
 dist/
 build/
-
 # Runtime attachment storage
 /backend/storage/attachments/
 /storage/attachments/

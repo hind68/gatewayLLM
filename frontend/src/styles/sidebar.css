@@ -7,11 +7,14 @@
   --sidebar-item-width: calc(100% - 16px);
   --sidebar-item-radius: 9px;
   --sidebar-hover-subtle: rgba(32, 37, 47, 0.045);
+  /* Keeps the icon's horizontal center identical to the closed state
+     (0 margin + 56px column): --sidebar-item-margin + this/2 = 28px. */
+  --sidebar-icon-column-open: 40px;
 }
 
 .sidebar {
   position: fixed;
-  z-index: 40;
+  z-index: var(--z-surface);
   inset: 0 auto 0 0;
   width: var(--sidebar-open-width);
   height: 100vh;
@@ -48,7 +51,7 @@
 .sidebar-user > button {
   border: 0;
   background: transparent;
-  color: #171717;
+  color: var(--text-primary);
   cursor: pointer;
   font: inherit;
 }
@@ -134,7 +137,7 @@
   width: 20px;
   height: 20px;
   object-fit: contain;
-  opacity: 0.68;
+  opacity: 0.65;
 }
 
 .sidebar-navigation {
@@ -160,7 +163,7 @@
   height: 36px;
   border-radius: var(--sidebar-item-radius);
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-icon-column-open) minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   margin: 0 var(--sidebar-item-margin);
@@ -184,7 +187,7 @@
 .sidebar-icon,
 .user-avatar-wrapper {
   position: relative;
-  width: 40px;
+  width: var(--sidebar-icon-column-open);
   height: 36px;
   display: grid;
   place-items: center;
@@ -254,7 +257,7 @@
 .sidebar-admin-navigation span {
   min-width: 0;
   overflow: hidden;
-  color: #111111;
+  color: var(--text-primary);
   font-size: 14px;
   line-height: 1;
   text-overflow: ellipsis;
@@ -292,7 +295,7 @@
 }
 
 .recent-section .history-heading span {
-  color: #1f1f1f;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 740;
 }
@@ -303,7 +306,7 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #1f2937;
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -321,7 +324,7 @@
   width: 20px;
   height: 20px;
   object-fit: contain;
-  opacity: 0.6;
+  opacity: 0.65;
   transition: opacity 140ms ease;
 }
 
@@ -350,9 +353,12 @@
   height: 40px;
   border-radius: var(--sidebar-item-radius);
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-icon-column-open) minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  /* The 28px avatar leaves less breathing room in the 40px icon column than
+     the ~19-20px nav icons do; a small gap brings it back to the same visual
+     spacing as the nav buttons above. */
+  gap: 4px;
   margin: 0 var(--sidebar-item-margin);
   padding: 0;
   text-align: left;
@@ -406,7 +412,7 @@
 }
 
 .user-copy strong {
-  color: #1e1e1e;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.1;
@@ -478,61 +484,10 @@
   justify-items: start;
 }
 
-.sidebar-closed .sidebar-primary-nav,
-.sidebar-closed .sidebar-admin-navigation {
-  border-bottom: 0;
-}
-
-.sidebar-closed .sidebar-primary-nav {
-  gap: 3px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--sidebar-divider);
-  margin-bottom: 6px;
-}
-
-.sidebar-closed .sidebar-admin-navigation {
-  margin-top: auto;
-  padding: 7px 0;
-  border-top: 1px solid var(--sidebar-divider);
-}
-
-.sidebar-closed .sidebar-navigation button,
-.sidebar-closed .sidebar-admin-navigation button {
-  width: var(--sidebar-open-width);
-  height: 36px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 0;
-  margin: 0;
-  padding: 0;
-}
-
-.sidebar-closed .sidebar-icon,
-.sidebar-closed .user-avatar-wrapper {
-  width: 56px;
-}
-
-.sidebar-closed .sidebar-icon::before,
-.sidebar-closed .user-avatar-wrapper::before {
-  width: 40px;
-}
-
 .sidebar-closed .sidebar-user {
   margin-top: auto;
   border-top: 1px solid var(--sidebar-divider);
   padding: 8px 0;
-}
-
-.sidebar-closed .sidebar-admin-navigation + .sidebar-user {
-  margin-top: 0;
-}
-
-.sidebar-closed .sidebar-user > button {
-  width: var(--sidebar-open-width);
-  height: 40px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 0;
-  margin: 0;
-  padding: 0;
 }
 
 .sidebar-closed .user-avatar {

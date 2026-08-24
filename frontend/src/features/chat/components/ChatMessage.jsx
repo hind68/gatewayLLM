@@ -125,6 +125,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
               content={message.content || ''}
               copiedKey={copiedKey}
               direction={textDirection}
+              isStreaming={message.status === 'EN_COURS'}
               onCopy={onCopy}
               setCopiedKey={setCopiedKey}
             />
@@ -160,8 +161,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
 }
 
 function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySafe, onInspectDocument, onSendSecureMessage }) {
-  const [showSafe, setShowSafe] = useState(false)
-  const [showOriginal, setShowOriginal] = useState(false)
+  const [activeTab, setActiveTab] = useState('safe')
   const [showAllAttachments, setShowAllAttachments] = useState(false)
   const matches = useMemo(() => message.dlpMatches || [], [message.dlpMatches])
   const attachments = useMemo(() => (
@@ -180,7 +180,11 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
   const canResendMasked = isMediumSeverity && Boolean(safeText.trim()) && !hasDlpFiles
   const originalText = message.dlpOriginalText || ''
   const hasOriginal = Boolean(originalText)
-  const hasOpenDetails = showSafe || showOriginal
+  const hasOpenDetails = !hasDlpFiles
+  // Les blocages texte gardent les vues sécurisée/originale/localisation dans
+  // une seule surface à onglets. Les blocages fichier conservent volontairement
+  // leur parcours séparé, car l'aperçu original et le renvoi sécurisé demandent
+  // des contrôles plus riches.
   const summary = dlpUserMessage({
     code: 'DLP_BLOCKED',
     detectedTypes: message.dlpDetectedTypes,
@@ -231,7 +235,7 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
               aria-expanded={showAllAttachments}
               onClick={() => setShowAllAttachments((current) => !current)}
             >
-              <span>{showAllAttachments ? 'R\u00e9duire' : `Afficher ${hiddenAttachmentCount} autre${hiddenAttachmentCount > 1 ? 's' : ''}`}</span>
+              <span>{showAllAttachments ? 'Réduire' : `Afficher ${hiddenAttachmentCount} autre${hiddenAttachmentCount > 1 ? 's' : ''}`}</span>
               <img
                 src="/assets/down.png"
                 alt=""
@@ -242,36 +246,52 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
           )}
         </section>
       ) : (
-        <div className="dlp-alert-tabs">
-          {isMediumSeverity && (
-            <button
-              type="button"
-              aria-controls={`dlp-safe-${message.id}`}
-              aria-expanded={showSafe}
-              onClick={() => setShowSafe((current) => !current)}
-            >
-              {showSafe ? 'Masquer la version sécurisée' : 'Voir la version sécurisée'}
-            </button>
-          )}
-          {canResendMasked && (
-            <button type="button" onClick={() => onSendSecureMessage?.(safeText)}>
-              Masquer et renvoyer
-            </button>
-          )}
+        <>
+          <div className="dlp-alert-tabs" role="tablist" aria-label="Vues du message bloqué">
+          <button
+            type="button"
+            aria-controls={`dlp-safe-${message.id}`}
+            aria-selected={activeTab === 'safe'}
+            className={activeTab === 'safe' ? 'is-active' : ''}
+            role="tab"
+            onClick={() => setActiveTab('safe')}
+          >
+            Version sécurisée
+          </button>
           <button
             type="button"
             aria-controls={`dlp-original-${message.id}`}
-            aria-expanded={showOriginal}
+            aria-selected={activeTab === 'original'}
+            className={activeTab === 'original' ? 'is-active' : ''}
             disabled={!hasOriginal}
+            role="tab"
             title={hasOriginal ? undefined : 'Disponible uniquement avant actualisation'}
-            onClick={() => setShowOriginal((current) => !current)}
+            onClick={() => setActiveTab('original')}
           >
-            {showOriginal ? 'Masquer la localisation' : 'Localiser dans mon message'}
+            Version originale
           </button>
-        </div>
+          <button
+            type="button"
+            aria-controls={`dlp-location-${message.id}`}
+            aria-selected={activeTab === 'location'}
+            className={activeTab === 'location' ? 'is-active' : ''}
+            role="tab"
+            onClick={() => setActiveTab('location')}
+          >
+            Localisation
+          </button>
+          </div>
+          {canResendMasked && (
+            <div className="dlp-alert-actions">
+              <button type="button" onClick={() => onSendSecureMessage?.(safeText)}>
+                Masquer et renvoyer
+              </button>
+            </div>
+          )}
+        </>
       )}
-      {!hasDlpFiles && isMediumSeverity && showSafe && (
-        <section className="dlp-detail-panel" id={`dlp-safe-${message.id}`}>
+      {!hasDlpFiles && activeTab === 'safe' && (
+        <section className="dlp-detail-panel" id={`dlp-safe-${message.id}`} role="tabpanel">
           <div className="dlp-detail-heading">
             <span>Version sécurisée</span>
             <button
@@ -284,19 +304,22 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
             </button>
           </div>
           <HighlightedPre parts={safeParts} />
-          <DetectionList matches={matches} />
         </section>
       )}
-      {!hasDlpFiles && showOriginal && hasOriginal && (
-        <section className="dlp-detail-panel sensitive" id={`dlp-original-${message.id}`}>
+      {!hasDlpFiles && activeTab === 'original' && hasOriginal && (
+        <section className="dlp-detail-panel sensitive" id={`dlp-original-${message.id}`} role="tabpanel">
           <p className="dlp-sensitive-warning">Cette vue affiche les données sensibles que vous avez saisies.</p>
           <HighlightedPre parts={originalParts} />
+        </section>
+      )}
+      {!hasDlpFiles && activeTab === 'location' && (
+        <section className="dlp-detail-panel" id={`dlp-location-${message.id}`} role="tabpanel">
+          <DetectionList matches={matches} />
         </section>
       )}
     </div>
   )
 }
-
 function inspectBlockedAttachment(attachments, matches, maskedText, onInspectDocument, selectedAttachment) {
   const attachment = selectedAttachment || attachments.find((item) => item?.decision === 'BLOCK') || attachments[0]
   if (!attachment) return

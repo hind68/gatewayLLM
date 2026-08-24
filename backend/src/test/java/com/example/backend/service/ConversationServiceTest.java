@@ -19,6 +19,7 @@ import com.example.backend.entity.Utilisateur;
 import com.example.backend.repository.ConversationRepository;
 import com.example.backend.repository.MessageRepository;
 import com.example.backend.repository.ModeleLlmRepository;
+import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.UUID;
 import java.util.Optional;
@@ -37,14 +38,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -80,6 +86,9 @@ class ConversationServiceTest {
     private ChatValidationService chatValidationService;
 
     @Mock
+    private AttachmentService attachmentService;
+
+    @Mock
     private Utilisateur demoUser;
 
     @Mock
@@ -112,11 +121,14 @@ class ConversationServiceTest {
                 dlpService,
                 messagePersistenceService,
                 chatValidationService,
+                attachmentService,
+                new ObjectMapper(),
                 10
         );
         lenient().when(demoUser.getExternalId()).thenReturn(testUserId.toString());
         lenient().when(currentUserService.resolve(any(Jwt.class))).thenReturn(demoUser);
         lenient().when(currentUserService.keycloakId(any(Jwt.class))).thenReturn(testUserId);
+        lenient().when(currentUserService.roles(any(Jwt.class))).thenReturn(List.of());
         lenient().when(chatValidationService.getBannedWords(any())).thenReturn(List.of());
         lenient().when(chatValidationService.getBannedWords(any(), any())).thenReturn(List.of());
         lenient().when(dlpService.safeTextForLlm(any(), eq(testUserId.toString()), any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -126,7 +138,8 @@ class ConversationServiceTest {
 
     @Test
     void createConversationUsesActiveModelAndDemoUser() {
-        when(modeleLlmRepository.findByAliasInterneAndStatut("secure-groq", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "secure-groq", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.of(model));
         when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -139,7 +152,8 @@ class ConversationServiceTest {
 
     @Test
     void createConversationRejectsUnknownOrInactiveModel() {
-        when(modeleLlmRepository.findByAliasInterneAndStatut("unknown", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "unknown", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(new CreateConversationRequest("unknown", "Test"), jwt))
@@ -167,10 +181,44 @@ class ConversationServiceTest {
                 .containsExactly("Bonjour", "Salut");
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "9",
+            "10"
+    })
+    void prepareStreamAcceptsAttachmentLimitBoundary(int fileCount) {
+        List<MultipartFile> files = testFiles(fileCount);
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(dlpService.safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of()))
+                .thenReturn(new DlpSafeMessage("Question", "Question", null, List.of()));
+        when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
+                .thenReturn(List.of());
+
+        service.streamMessageWithFiles(10L, "Question", files, jwt);
+
+        verify(dlpService).safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of());
+    }
+
+    @Test
+    void prepareStreamRejectsMoreThanTenFilesBeforeDlpAndLiteLlm() {
+        List<MultipartFile> files = testFiles(11);
+
+        assertThatThrownBy(() -> service.streamMessageWithFiles(10L, "Question", files, jwt))
+                .isInstanceOf(AttachmentLimitExceededException.class)
+                .hasMessageContaining("11 fichiers");
+
+        verify(dlpService, never()).safeMessageForLlm(any(), any(), any(), any(), any());
+        verify(dlpService, never()).safeTextForLlm(any(), any(), any());
+        verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
+    }
+
     @Test
     void changeModelUpdatesCurrentConversationModelWhenTargetIsActive() {
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(modeleLlmRepository.findByAliasInterneAndStatut("secure-gemini", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "secure-gemini", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.of(geminiModel));
 
         var response = service.changeModel(10L, new ChangeConversationModelRequest("secure-gemini"), jwt);
@@ -182,7 +230,8 @@ class ConversationServiceTest {
     @Test
     void changeModelRejectsUnknownOrInactiveModel() {
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(modeleLlmRepository.findByAliasInterneAndStatut("inactive", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "inactive", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.changeModel(10L, new ChangeConversationModelRequest("inactive"), jwt))
@@ -450,6 +499,61 @@ class ConversationServiceTest {
     }
 
     @Test
+    void streamMessageCompletesEmitterEvenWhenCompletionPersistenceFails() throws Exception {
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
+                .thenReturn(List.of());
+        doAnswer(invocation -> {
+            Consumer<String> onToken = invocation.getArgument(2);
+            Runnable onComplete = invocation.getArgument(3);
+            onToken.accept("Reponse");
+            onComplete.run();
+            return null;
+        }).when(liteLlmService).streamChat(eq("secure-groq"), any(), any(), any(), any());
+        doThrow(new RuntimeException("db down"))
+                .when(messagePersistenceService).completeAssistantMessage(any(), any());
+
+        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
+
+        assertThat(isComplete(emitter)).isTrue();
+    }
+
+    @Test
+    void streamMessageCompletesEmitterEvenWhenFailurePersistenceFails() throws Exception {
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
+                .thenReturn(List.of());
+        doAnswer(invocation -> {
+            Consumer<Throwable> onError = invocation.getArgument(4);
+            onError.accept(new RuntimeException("boom"));
+            return null;
+        }).when(liteLlmService).streamChat(eq("secure-groq"), any(), any(), any(), any());
+        doThrow(new RuntimeException("db down"))
+                .when(messagePersistenceService).failAssistantMessage(any(), any());
+
+        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
+
+        assertThat(isComplete(emitter)).isTrue();
+    }
+
+    /**
+     * SseEmitter/ResponseBodyEmitter only invokes onCompletion callbacks through
+     * the real async request handler wired in by Spring MVC, which a plain unit
+     * test never attaches; reading the private "complete" flag is the only way
+     * to observe that emitter.complete() actually ran.
+     */
+    private boolean isComplete(SseEmitter emitter) throws Exception {
+        java.lang.reflect.Field field = org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.class
+                .getDeclaredField("complete");
+        field.setAccessible(true);
+        return field.getBoolean(emitter);
+    }
+
+    @Test
     void conversationLookupIsScopedToDemoUser() {
         when(conversationRepository.findOwnedById(99L, demoUser)).thenReturn(Optional.empty());
 
@@ -472,6 +576,66 @@ class ConversationServiceTest {
                 .hasMessageContaining("Conversation not found");
 
         verify(conversationRepository).findOwnedById(99L, otherUser);
+    }
+
+    @Test
+    void attachmentMetadataRoundTripsThroughJsonSerializationIncludingTrickyCharacters() {
+        List<MultipartFile> files = testFiles(1);
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(dlpService.safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of()))
+                .thenReturn(new DlpSafeMessage("Question", "Question", null, List.of()));
+        when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
+        List<AttachmentMetadata> storedAttachments = List.of(
+                new AttachmentMetadata(7L, "weird\nname\t\"quoted\".txt", "text/plain", 42L, "MASK", 100, 25, "SUCCESS"),
+                new AttachmentMetadata(null, "no-id.txt", "application/octet-stream", 0L, "ALLOW", 0, 0, "SUCCESS")
+        );
+        when(attachmentService.store(any(Message.class), eq(files), any())).thenReturn(storedAttachments);
+        AtomicReference<Message> savedUserMessage = new AtomicReference<>();
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (message.getRole() == RoleMessage.USER) {
+                savedUserMessage.set(message);
+            }
+            return message;
+        });
+        when(messageRepository.findById(org.mockito.ArgumentMatchers.nullable(Long.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(savedUserMessage.get()));
+        when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
+                .thenReturn(List.of());
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.captor();
+
+        service.streamMessageWithFiles(10L, "Question", files, jwt);
+
+        verify(messageRepository, times(2)).save(messageCaptor.capture());
+        Message userMessage = messageCaptor.getAllValues().get(0);
+        assertThat(userMessage.getAttachmentMetadataJson()).contains("weird\\nname\\t\\\"quoted\\\".txt");
+        when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(userMessage));
+
+        var messages = service.messages(10L, jwt);
+
+        assertThat(messages.get(0).attachments()).containsExactlyElementsOf(storedAttachments);
+    }
+
+    @Test
+    void attachmentMetadataParsesBlankValueAsEmptyList() {
+        Message message = new Message(conversation, RoleMessage.USER, 1, StatutMessage.TERMINE, "Question", null);
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(message));
+
+        var messages = service.messages(10L, jwt);
+
+        assertThat(messages.get(0).attachments()).isEmpty();
+    }
+
+    @Test
+    void attachmentMetadataParseIgnoresCorruptJsonGracefully() {
+        Message message = new Message(conversation, RoleMessage.USER, 1, StatutMessage.TERMINE, "Question", null);
+        message.setAttachmentMetadataJson("not json");
+        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
+        when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(message));
+
+        assertThatCode(() -> service.messages(10L, jwt)).doesNotThrowAnyException();
+        assertThat(service.messages(10L, jwt).get(0).attachments()).isEmpty();
     }
 
     private List<LiteLlmMessage> streamAndCaptureLiteLlmPayload(
@@ -541,5 +705,11 @@ class ConversationServiceTest {
                 Arguments.of("Adresse IP 192.168.1.24", "Adresse IP [IP_ADDRESS]", "192.168.1.24"),
                 Arguments.of("Token ghp_abcdefghijklmnopqrstuvwxyz123456", "Token [TOKEN]", "ghp_abcdefghijklmnopqrstuvwxyz123456")
         );
+    }
+
+    private static List<MultipartFile> testFiles(int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> (MultipartFile) new MockMultipartFile("files", "file-" + index + ".txt", "text/plain", "x".getBytes()))
+                .toList();
     }
 }

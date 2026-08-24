@@ -2,10 +2,10 @@ import { memo, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { normalizeAssistantMarkdown, normalizeMarkdownCodeFences } from '../utils/markdown'
+import { isRenderableMarkdownImageUrl, normalizeAssistantMarkdown, normalizeMarkdownCodeFences } from '../utils/markdown'
 import CodeBlock from './CodeBlock'
 
-function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }) {
+function MarkdownContent({ content, copiedKey, direction, isStreaming, onCopy, setCopiedKey }) {
   const normalizedContent = useMemo(
     () => normalizeAssistantMarkdown(normalizeMarkdownCodeFences(content)),
     [content],
@@ -25,6 +25,7 @@ function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }
         <CodeBlock
           code={code}
           copiedKey={copiedKey}
+          isStreaming={isStreaming}
           language={match?.[1] || 'text'}
           onCopy={onCopy}
           setCopiedKey={setCopiedKey}
@@ -32,7 +33,7 @@ function MarkdownContent({ content, copiedKey, direction, onCopy, setCopiedKey }
       )
     },
     img: MarkdownImage,
-  }), [copiedKey, onCopy, setCopiedKey])
+  }), [copiedKey, isStreaming, onCopy, setCopiedKey])
 
   return (
     <div className="markdown-body" dir={direction}>
@@ -76,21 +77,6 @@ export function MarkdownImage({ src = '', alt = '', title }) {
       onError={() => setHasError(true)}
     />
   )
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function isRenderableMarkdownImageUrl(src) {
-  const value = String(src || '').trim()
-  if (!value) return false
-
-  if (value.startsWith('/')) return true
-
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
 }
 
 function fallbackImageLabel(alt) {

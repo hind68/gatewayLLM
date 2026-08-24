@@ -16,11 +16,73 @@
   --ui-orange-600: #c46b36;
   --ui-orange-700: #b85d2b;
   --ui-border-subtle: rgba(31, 41, 55, 0.08);
+  /* Orange/blue pair matching the Synapse fingerprint logo artwork, used for
+     the model badge fallback gradient. */
+  --model-badge-gradient-start: #dd7a3e;
+  --model-badge-gradient-end: #4b94dc;
   --sidebar-surface: rgba(250, 252, 255, 0.88);
   --sidebar-surface-strong: rgba(255, 255, 255, 0.72);
   --sidebar-hover: rgba(32, 37, 47, 0.055);
   --sidebar-divider: rgba(37, 48, 67, 0.075);
   --badge-surface: rgba(39, 45, 56, 0.065);
+
+  /* Text roles. Values match the app's existing effective defaults
+     (.app-shell / #6b7280 / #9ca3af are already the most common instances
+     of each role) so applying these tokens is a no-op visually. */
+  --text-primary: #1f1f1f;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+
+  /* Shared danger/success accent for icons and small status cues (toast,
+     assistant error). DLP's security-alert red stays its own distinct
+     family on purpose — it must read as a different kind of event. */
+  --color-danger: #dc2626;
+  --color-success: #10b981;
+
+  /* Radius scale, matching the radii already dominant in the interface:
+     12px is the established "card/popover" radius (search-modal, model-menu,
+     menu-popover, history-popover, advanced-filters). */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Shadow scale, matching the three box-shadow combinations already used
+     across popovers/menus (--shadow-md), modals (--shadow-lg) and the
+     toast (--shadow-sm). */
+  --shadow-sm:
+    0 10px 15px -3px rgba(0, 0, 0, 0.04),
+    0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  --shadow-md:
+    0 10px 24px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-lg:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Spacing scale for reuse where a gap/margin already matches one of
+     these values; not retrofitted across the whole app. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* z-index scale for the overlay surfaces named in the audit (dropdowns,
+     popovers, modals, toasts, panels). Every value below is unchanged from
+     before this pass — this only gives the repeated ones a shared name.
+     Elements that must sit above one specific sibling (a dropdown nested
+     inside a modal, the elevated confirm-dialog backdrop, the collapsed-
+     sidebar account popover, the panel resize handle...) keep their own
+     literal z-index next to a comment explaining why; forcing every value
+     onto this scale would risk a stacking regression for no visible gain. */
+  --z-surface: 40;
+  --z-overlay: 50;
+  --z-flyout: 80;
+  --z-dropdown: 90;
+  --z-dialog-backdrop: 100;
+  --z-toast: 9999;
 }
 
 /* App-scoped layout tokens */

@@ -102,7 +102,6 @@ export default function useChatUi({
     setIsComposerMaxed(textarea.scrollHeight > 150)
   }, [])
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useLayoutEffect(() => {
     const element = composerRef.current
     const before = composerBeforeRectRef.current
@@ -170,11 +169,7 @@ export default function useChatUi({
   }, [attachments])
 
   useLayoutEffect(() => {
-    if (!hasActiveMessages) {
-      setGoBottomTop(null)
-      setComposerHeight(null)
-      return undefined
-    }
+    if (!hasActiveMessages) return undefined
 
     const composer = composerRef.current
     const chatMain = composer?.closest('.chat-main')
@@ -210,8 +205,6 @@ export default function useChatUi({
       window.removeEventListener('resize', scheduleUpdate)
     }
   }, [attachments.length, draft, hasActiveMessages, isComposerMaxed])
-  /* eslint-enable react-hooks/set-state-in-effect */
-
   useEffect(() => () => {
     if (composerTimerRef.current) {
       window.clearTimeout(composerTimerRef.current)
@@ -302,12 +295,12 @@ export default function useChatUi({
     addAttachments,
     clearAttachments,
     composerBeforeRectRef,
-    composerHeight,
+    composerHeight: hasActiveMessages ? composerHeight : null,
     composerRef,
     copiedKey,
     draft,
     goToBottom,
-    goBottomTop,
+    goBottomTop: hasActiveMessages ? goBottomTop : null,
     handleKeyDown,
     hasActiveMessages,
     isComposerMaxed,
