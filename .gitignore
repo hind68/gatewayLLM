@@ -15,4 +15,4 @@ venv/
 dist/
 build/
 backend/storage/attachments/
-files types/
+
