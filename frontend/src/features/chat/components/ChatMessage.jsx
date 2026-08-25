@@ -10,7 +10,7 @@ import { detectTextDirection } from '../utils/markdown'
 
 const COLLAPSED_ATTACHMENT_COUNT = 3
 
-function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message, onCopy, onInspectDocument, setCopiedKey }) {
+function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message, onCopy, onInspectDocument, onSendSecureMessage, setCopiedKey }) {
   const isUser = message.role === 'USER'
   const isDlpBlocked = message.status === 'DLP_BLOCKED'
   const effectiveModelAlias = message.modelAlias || fallbackModelAlias || fallbackModelName
@@ -72,6 +72,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
               onCopyAlert={(text) => copyResponse(alertCopyKey, text)}
               onCopySafe={(text) => copyResponse(safeCopyKey, text)}
               onInspectDocument={onInspectDocument}
+              onSendSecureMessage={onSendSecureMessage}
             />
           </div>
         </article>
@@ -91,6 +92,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
             onCopyAlert={(text) => copyResponse(alertCopyKey, text)}
             onCopySafe={(text) => copyResponse(safeCopyKey, text)}
             onInspectDocument={onInspectDocument}
+            onSendSecureMessage={onSendSecureMessage}
           />
         </div>
       </article>
@@ -158,7 +160,7 @@ function ChatMessage({ copiedKey, fallbackModelAlias, fallbackModelName, message
   )
 }
 
-function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySafe, onInspectDocument }) {
+function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySafe, onInspectDocument, onSendSecureMessage }) {
   const [activeTab, setActiveTab] = useState('safe')
   const [showAllAttachments, setShowAllAttachments] = useState(false)
   const matches = useMemo(() => message.dlpMatches || [], [message.dlpMatches])
@@ -171,6 +173,9 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
     ? blockedAttachments
     : blockedAttachments.slice(0, COLLAPSED_ATTACHMENT_COUNT)
   const safeText = message.dlpMaskedText || ''
+  const severity = String(message.dlpHighestSeverity || '').toLowerCase()
+  const isMediumSeverity = severity === 'medium'
+  const canResendMasked = isMediumSeverity && Boolean(safeText.trim()) && !hasDlpFiles
   const originalText = message.dlpOriginalText || ''
   const hasOriginal = Boolean(originalText)
   const hasOpenDetails = !hasDlpFiles
@@ -239,40 +244,49 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
           )}
         </section>
       ) : (
-        <div className="dlp-alert-tabs" role="tablist" aria-label="Vues du message bloqué">
-          <button
-            type="button"
-            aria-controls={`dlp-safe-${message.id}`}
-            aria-selected={activeTab === 'safe'}
-            className={activeTab === 'safe' ? 'is-active' : ''}
-            role="tab"
-            onClick={() => setActiveTab('safe')}
-          >
-            Version sécurisée
-          </button>
-          <button
-            type="button"
-            aria-controls={`dlp-original-${message.id}`}
-            aria-selected={activeTab === 'original'}
-            className={activeTab === 'original' ? 'is-active' : ''}
-            disabled={!hasOriginal}
-            role="tab"
-            title={hasOriginal ? undefined : 'Disponible uniquement avant actualisation'}
-            onClick={() => setActiveTab('original')}
-          >
-            Version originale
-          </button>
-          <button
-            type="button"
-            aria-controls={`dlp-location-${message.id}`}
-            aria-selected={activeTab === 'location'}
-            className={activeTab === 'location' ? 'is-active' : ''}
-            role="tab"
-            onClick={() => setActiveTab('location')}
-          >
-            Localisation
-          </button>
-        </div>
+        <>
+          <div className="dlp-alert-tabs" role="tablist" aria-label="Vues du message bloqué">
+            <button
+              type="button"
+              aria-controls={`dlp-safe-${message.id}`}
+              aria-selected={activeTab === 'safe'}
+              className={activeTab === 'safe' ? 'is-active' : ''}
+              role="tab"
+              onClick={() => setActiveTab('safe')}
+            >
+              Version sécurisée
+            </button>
+            <button
+              type="button"
+              aria-controls={`dlp-original-${message.id}`}
+              aria-selected={activeTab === 'original'}
+              className={activeTab === 'original' ? 'is-active' : ''}
+              disabled={!hasOriginal}
+              role="tab"
+              title={hasOriginal ? undefined : 'Disponible uniquement avant actualisation'}
+              onClick={() => setActiveTab('original')}
+            >
+              Version originale
+            </button>
+            <button
+              type="button"
+              aria-controls={`dlp-location-${message.id}`}
+              aria-selected={activeTab === 'location'}
+              className={activeTab === 'location' ? 'is-active' : ''}
+              role="tab"
+              onClick={() => setActiveTab('location')}
+            >
+              Localisation
+            </button>
+          </div>
+          {canResendMasked && (
+            <div className="dlp-alert-actions">
+              <button type="button" onClick={() => onSendSecureMessage?.(safeText)}>
+                Masquer et renvoyer
+              </button>
+            </div>
+          )}
+        </>
       )}
       {!hasDlpFiles && activeTab === 'safe' && (
         <section className="dlp-detail-panel" id={`dlp-safe-${message.id}`} role="tabpanel">
@@ -489,6 +503,7 @@ function areChatMessagesEqual(previous, next) {
     previous.fallbackModelName === next.fallbackModelName &&
     previous.onCopy === next.onCopy &&
     previous.onInspectDocument === next.onInspectDocument &&
+    previous.onSendSecureMessage === next.onSendSecureMessage &&
     previous.setCopiedKey === next.setCopiedKey
   )
 
