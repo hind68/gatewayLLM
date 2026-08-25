@@ -1,3 +1,5 @@
+import keycloak from '../keycloak'
+
 const DEFAULT_API_BASE_URL = '/api'
 
 /**
@@ -30,7 +32,22 @@ export async function apiFetch(path, options = {}) {
  * keep direct access to `response.body.getReader()` instead of eagerly parsing content.
  */
 export async function apiFetchResponse(path, options = {}) {
+  if (keycloak?.authenticated && typeof keycloak.updateToken === 'function') {
+    try {
+      await keycloak.updateToken(30)
+    } catch {
+      keycloak.login()
+      throw new ApiError('Unauthorized', { status: 401 })
+    }
+  }
+
   const response = await fetch(buildApiUrl(path), prepareOptions(options))
+
+  if (response.status === 401) {
+    keycloak.login()
+    throw new ApiError('Unauthorized', { status: 401 })
+  }
+
   if (!response.ok) {
     throw await createApiError(response)
   }
@@ -47,6 +64,10 @@ function prepareOptions(options) {
     if (!nextHeaders.has('Content-Type')) {
       nextHeaders.set('Content-Type', 'application/json')
     }
+  }
+
+  if (keycloak.token) {
+    nextHeaders.set('Authorization', `Bearer ${keycloak.token}`)
   }
 
   return {
