@@ -30,7 +30,7 @@ public class CurrentUserService {
     // read-only transaction.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Utilisateur resolve(Jwt jwt) {
-        String externalId = jwt.getSubject();
+        String externalId = requireSubject(jwt);
         return utilisateurRepository.findByExternalId(externalId)
                 .orElseGet(() -> utilisateurRepository.save(
                         new Utilisateur(externalId, displayNameFrom(jwt))
@@ -38,15 +38,25 @@ public class CurrentUserService {
     }
 
     public UUID keycloakId(Jwt jwt) {
+        return UUID.fromString(requireSubject(jwt));
+    }
+
+    /**
+     * Both {@link #resolve(Jwt)} and {@link #keycloakId(Jwt)} must agree on what
+     * counts as a valid identity: a missing or non-UUID subject fails closed with
+     * 401 instead of resolve() silently persisting a malformed externalId.
+     */
+    private String requireSubject(Jwt jwt) {
         String subject = jwt == null ? null : jwt.getSubject();
         if (subject == null || subject.isBlank()) {
             throw new ResponseStatusException(UNAUTHORIZED, "Authenticated user identity is missing");
         }
         try {
-            return UUID.fromString(subject);
+            UUID.fromString(subject);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(UNAUTHORIZED, "Authenticated user identity is invalid", exception);
         }
+        return subject;
     }
 
     public List<String> roles(Jwt jwt) {

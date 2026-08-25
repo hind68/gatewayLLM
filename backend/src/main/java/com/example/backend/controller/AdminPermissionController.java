@@ -86,8 +86,10 @@ public class AdminPermissionController {
     @Transactional
     public UserLlmRestriction addLlmRestriction(@RequestBody Map<String, String> payload, JwtAuthenticationToken auth) {
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
+        UUID targetUserId = UUID.fromString(payload.get("userId"));
+        requireExistingUser(targetUserId);
         UserLlmRestriction restriction = new UserLlmRestriction();
-        restriction.setUserKeycloakId(UUID.fromString(payload.get("userId")));
+        restriction.setUserKeycloakId(targetUserId);
         restriction.setLlmModelAlias(payload.get("llmModelAlias"));
         restriction.setCreatedBy(adminId);
         UserLlmRestriction saved = userLlmRestrictionRepo.save(restriction);
@@ -115,6 +117,7 @@ public class AdminPermissionController {
     @Transactional
     public UserBannedWord addUserBannedWord(@RequestBody Map<String, String> payload, JwtAuthenticationToken auth) {
         UUID targetUserId = UUID.fromString(payload.get("userId"));
+        requireExistingUser(targetUserId);
         String word = payload.get("word").trim().toLowerCase();
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         UserBannedWord saved = userBannedWordRepo.save(new UserBannedWord(targetUserId, word, adminId));
@@ -131,5 +134,11 @@ public class AdminPermissionController {
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         userBannedWordRepo.deleteById(id);
         auditLogRepository.save(new AuditLog("DELETE", "UserBannedWord", String.valueOf(id), adminId));
+    }
+
+    private void requireExistingUser(UUID userKeycloakId) {
+        if (utilisateurRepository.findByExternalId(userKeycloakId.toString()).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userKeycloakId);
+        }
     }
 }
