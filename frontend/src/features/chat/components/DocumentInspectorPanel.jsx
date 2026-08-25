@@ -21,7 +21,7 @@ const COMPACT_THREAT_LIMIT = 6
 const PREVIEW_UNAVAILABLE = 'Format non prévisualisable'
 const EXTRACTION_UNAVAILABLE = 'Extraction impossible'
 
-export default function DocumentInspectorPanel({ attachment: inspectionTarget, closing = false, onAttachSecure, onClose, width }) {
+export default function DocumentInspectorPanel({ attachment: inspectionTarget, closing = false, hidden = false, onAttachSecure, onClose, width }) {
   const target = useMemo(() => normalizeTarget(inspectionTarget), [inspectionTarget])
   const attachment = target.attachment
   const attachmentKey = attachmentIdentity(attachment)
@@ -259,7 +259,12 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
   if (!attachment) return null
 
   return (
-    <aside className={`document-inspector-panel ${closing ? 'is-closing' : ''}`} style={{ width }} aria-label="Inspection du document">
+    <aside
+      aria-hidden={hidden || undefined}
+      aria-label="Inspection du document"
+      className={`document-inspector-panel ${closing ? 'is-closing' : ''} ${hidden ? 'is-admin-hidden' : ''}`.trim()}
+      style={{ width }}
+    >
       <header className="document-inspector-header">
         <div className="document-inspector-title">
           <strong title={filename}>{filename}</strong>
@@ -402,6 +407,10 @@ function InspectionDocumentView({ state }) {
   const rows = lineRows(state.text, highlightableMatches)
   function selectMatch(match) {
     const id = matchKey(match)
+    if (selectedMatchId === id) {
+      setSelectedMatchId('')
+      return
+    }
     const line = lineNumberForMatch(state.text, match)
     setSelectedMatchId(id)
     const lineElement = Number.isInteger(line) ? document.getElementById(`line-${line}`) : null

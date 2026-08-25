@@ -13,6 +13,7 @@
 @import './composer.css';
 @import './feedback.css';
 @import './responsive.css';
+@import './admin.css';
 
 :root {
   --scrollbar-thumb-soft: rgba(148, 163, 184, 0.34);

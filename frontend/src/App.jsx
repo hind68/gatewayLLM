@@ -1,33 +1,68 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { AuthContext } from './AuthProvider'
 import useConversations from './features/conversations/hooks/useConversations'
 import AppLayout from './features/layout/AppLayout'
 import useAppMenus from './features/layout/hooks/useAppMenus'
 import useChatController from './features/chat/hooks/useChatController'
 import useChatUi from './features/chat/hooks/useChatUi'
 import useModels from './features/models/hooks/useModels'
+import { hasAdminRole } from './utils/authUtils'
 
 function App() {
-  const [chatError, setChatError] = useState('')
-  const [chatNotice, setChatNotice] = useState('')
+  const keycloak = useContext(AuthContext)
+  const token = keycloak?.token
+  const isAdmin = hasAdminRole(token)
+
+  const [notifications, setNotifications] = useState([])
+  const notificationIdRef = useRef(0)
   const [showTabs, setShowTabs] = useState(false)
+  const [showAdminDashboard, setShowAdminDashboardState] = useState(false)
+
+  const setShowAdminDashboard = useCallback((nextValue) => {
+    const currentValue = showAdminDashboard
+    const resolvedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue
+    if (resolvedValue === currentValue) return
+
+    const updateView = () => {
+      flushSync(() => {
+        setShowAdminDashboardState(resolvedValue)
+      })
+    }
+
+    if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      updateView()
+      return
+    }
+
+    document.documentElement.dataset.workspaceTransition = resolvedValue ? 'to-admin' : 'to-chat'
+    const transition = document.startViewTransition(updateView)
+    const clearTransitionDirection = () => {
+      delete document.documentElement.dataset.workspaceTransition
+    }
+    transition.finished.then(clearTransitionDirection, clearTransitionDirection)
+  }, [showAdminDashboard])
 
   const showError = useCallback((message) => {
-    setChatNotice('')
-    setChatError(message)
+    notificationIdRef.current += 1
+    setNotifications((current) => [...current, { id: notificationIdRef.current, kind: 'error', message }])
   }, [])
 
   const showNotice = useCallback((message) => {
-    setChatError('')
-    setChatNotice(message)
+    notificationIdRef.current += 1
+    setNotifications((current) => [...current, { id: notificationIdRef.current, kind: 'success', message }])
   }, [])
 
   const clearChatError = useCallback(() => {
-    setChatError('')
+    setNotifications((current) => current.filter((notification) => notification.kind !== 'error'))
   }, [])
 
   const clearFeedback = useCallback(() => {
-    setChatError('')
-    setChatNotice('')
+    setNotifications([])
+  }, [])
+
+  const dismissNotification = useCallback((id) => {
+    setNotifications((current) => current.filter((notification) => notification.id !== id))
   }, [])
 
   const menus = useAppMenus({
@@ -66,6 +101,7 @@ function App() {
     modelDisplayName: models.modelDisplayName,
     setConversationUiStatus: conversations.status.setConversationUiStatus,
     showError,
+    showNotice,
   })
 
   const controller = useChatController({
@@ -83,10 +119,10 @@ function App() {
   })
 
   useEffect(() => {
-    if (!chatError && !chatNotice) return undefined
+    if (notifications.length === 0) return undefined
     const timeout = window.setTimeout(clearFeedback, 5000)
     return () => window.clearTimeout(timeout)
-  }, [chatError, chatNotice, clearFeedback])
+  }, [notifications, clearFeedback])
 
   const conversationProps = {
     ...conversations,
@@ -129,9 +165,16 @@ function App() {
       models={models}
       conversations={conversationProps}
       feedback={{
-        chatError,
-        chatNotice,
-        onClearToast: clearFeedback,
+        notifications,
+        onDismissNotification: dismissNotification,
+      }}
+      admin={{
+        isAdmin,
+        showAdminDashboard,
+        setShowAdminDashboard,
+        onError: showError,
+        onNotice: showNotice,
+        onModelsChanged: models.refreshModels,
       }}
     />
   )
