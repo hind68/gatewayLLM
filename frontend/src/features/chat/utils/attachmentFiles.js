@@ -24,24 +24,26 @@ export const ACCEPTED_ATTACHMENT_EXTENSIONS = [
   ...CODE_EXTENSIONS,
 ]
 
+const FILE_TYPE_ICONS_DIR = '/assets/files%20types'
+
 const SPECIFIC_FILE_ICONS = {
-  csv: '/assets/sheets.png',
-  doc: '/assets/doc.png',
-  docx: '/assets/doc.png',
-  pdf: '/assets/pdf.png',
-  ppt: '/assets/ppt.png',
-  pptx: '/assets/ppt.png',
-  xls: '/assets/sheets.png',
-  xlsx: '/assets/sheets.png',
+  csv: `${FILE_TYPE_ICONS_DIR}/sheets.png`,
+  doc: `${FILE_TYPE_ICONS_DIR}/doc.png`,
+  docx: `${FILE_TYPE_ICONS_DIR}/doc.png`,
+  pdf: `${FILE_TYPE_ICONS_DIR}/pdf.png`,
+  ppt: `${FILE_TYPE_ICONS_DIR}/ppt.png`,
+  pptx: `${FILE_TYPE_ICONS_DIR}/ppt.png`,
+  xls: `${FILE_TYPE_ICONS_DIR}/sheets.png`,
+  xlsx: `${FILE_TYPE_ICONS_DIR}/sheets.png`,
   zip: '/assets/zip.png',
 }
 
 export function getAttachmentIconSrc(filename) {
   const extension = fileExtension(filename)
   if (SPECIFIC_FILE_ICONS[extension]) return SPECIFIC_FILE_ICONS[extension]
-  if (hasExtension(extension, IMAGE_EXTENSIONS)) return '/assets/photo.png'
-  if (hasExtension(extension, CODE_EXTENSIONS)) return '/assets/script.png'
-  if (hasExtension(extension, TEXT_EXTENSIONS)) return '/assets/text.png'
+  if (hasExtension(extension, IMAGE_EXTENSIONS)) return `${FILE_TYPE_ICONS_DIR}/image.png`
+  if (hasExtension(extension, CODE_EXTENSIONS)) return `${FILE_TYPE_ICONS_DIR}/code.png`
+  if (hasExtension(extension, TEXT_EXTENSIONS)) return `${FILE_TYPE_ICONS_DIR}/text.png`
   return '/assets/document.png'
 }
 

@@ -332,7 +332,6 @@ export default function AppLayout({
             attachment={inspectedDocument}
             closing={isInspectorClosing}
             conversationId={activeConversation?.id}
-            key={`${inspectedDocument.attachment?.id || inspectedDocument.id || inspectedDocument.attachment?.filename || inspectedDocument.filename || inspectedDocument.name}-${inspectedDocument.mode || 'view'}`}
             onAttachSecure={attachSecureVersion}
             onClose={closeInspector}
             width={inspectorWidth}

@@ -34,13 +34,19 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
   const [showTextSizeMenu, setShowTextSizeMenu] = useState(false)
   const textSizeControlRef = useRef(null)
 
-  // Reset per-attachment view state during render (React's documented pattern
-  // for "adjusting state when a prop changes") instead of an effect, so
-  // switching documents never renders one frame of the previous document's
-  // state before the reset commits.
-  const [resetKey, setResetKey] = useState(attachmentKey)
-  if (resetKey !== attachmentKey) {
-    setResetKey(attachmentKey)
+  // Reset per-attachment (and per-requested-view) state during render
+  // (React's documented pattern for "adjusting state when a prop changes")
+  // instead of an effect, so switching documents never renders one frame of
+  // the previous document's state before the reset commits. The panel stays
+  // mounted across switches (AppLayout no longer remounts it via `key`) so
+  // this in-place reset is what now keeps every view in sync with the
+  // current attachment/requested tab — including re-jumping to the secure
+  // or detected tab when the same attachment is reopened with a new
+  // requested view.
+  const resetSignature = `${attachmentKey}:${initialMode(target)}`
+  const [resetKey, setResetKey] = useState(resetSignature)
+  if (resetKey !== resetSignature) {
+    setResetKey(resetSignature)
     setActiveTab(initialMode(target))
     setOriginalState(initialOriginalState())
     setInspectionState(initialInspectionState(target))
@@ -306,7 +312,7 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
 
       <div className="document-inspector-viewer">
         <div className="document-zoom-shell">
-          <article className={pageClass} style={readerStyle} key={activeTab}>
+          <article className={pageClass} style={readerStyle} key={`${attachmentKey}-${activeTab}`}>
             {activeTab === 'original' && <OriginalDocumentView documentState={originalState} extractedText={inspectionState.text || target.extractedText} extractionLoading={inspectionState.loading} />}
             {activeTab === 'detected' && <InspectionDocumentView state={{ ...inspectionState, matches: visibleMatches, text: inspectionState.text || target.extractedText }} />}
             {activeTab === 'secure' && <SecureDocumentView state={secureState} />}
@@ -477,14 +483,44 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
   // Sort by severity so the most critical detections surface within the
   // compact (collapsed) view instead of whatever order they were found in.
   const visibleMatches = [...filteredMatches].sort((a, b) => SEVERITY_RANK[severityGroup(a)] - SEVERITY_RANK[severityGroup(b)])
-  const visibleChips = expanded ? visibleMatches : visibleMatches.slice(0, COMPACT_THREAT_LIMIT)
-  const canExpand = visibleMatches.length > COMPACT_THREAT_LIMIT
+  const primaryMatches = visibleMatches.slice(0, COMPACT_THREAT_LIMIT)
+  const overflowMatches = visibleMatches.slice(COMPACT_THREAT_LIMIT)
+  const canExpand = overflowMatches.length > 0
+
+  function renderPill(match, index) {
+    const id = matchKey(match)
+    const severity = severityClass(match)
+    const line = lineNumberForMatch(text, match)
+    const lineLabel = Number.isInteger(line) ? `L${line}` : 'L?'
+    const fullLineLabel = Number.isInteger(line) ? `Ligne ${line}` : 'Ligne inconnue'
+    return (
+      <button
+        type="button"
+        aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
+        className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
+        key={`${id}-${index}`}
+        data-target-match-id={id}
+        onClick={() => onSelect(match)}
+        title={`${displaySeverity(match.severity)} - ${displayTypeFr(match.type)} - ${fullLineLabel}`}
+      >
+        <span>{displayTypeFr(match.type)}</span>
+        <small title={fullLineLabel}>{lineLabel}</small>
+      </button>
+    )
+  }
+
   return (
     <div className="document-threat-navigation shrink-0" aria-label="Liste des menaces détectées">
       <div className="document-threat-summary">
         <strong>{threatSummary(counts)}</strong>
         {canExpand && (
-          <button type="button" className="document-threat-toggle" aria-label={expanded ? 'R\u00e9duire' : 'Voir les autres'} onClick={() => setExpanded((current) => !current)}>
+          <button
+            type="button"
+            className="document-threat-toggle"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'R\u00e9duire' : 'Voir les autres'}
+            onClick={() => setExpanded((current) => !current)}
+          >
             <span>{expanded ? 'R\u00e9duire' : 'Voir les autres'}</span>
             <img
               src="/assets/down.png"
@@ -511,29 +547,18 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
           ))}
         </div>
       </div>
-      <div className={`document-threat-list shrink-0 ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
-        {visibleChips.map((match, index) => {
-          const id = matchKey(match)
-          const severity = severityClass(match)
-          const line = lineNumberForMatch(text, match)
-          const lineLabel = Number.isInteger(line) ? `L${line}` : 'L?'
-          const fullLineLabel = Number.isInteger(line) ? `Ligne ${line}` : 'Ligne inconnue'
-          return (
-            <button
-              type="button"
-              aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
-              className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
-              key={`${id}-${index}`}
-              data-target-match-id={id}
-              onClick={() => onSelect(match)}
-              title={`${displaySeverity(match.severity)} - ${displayTypeFr(match.type)} - ${fullLineLabel}`}
-            >
-              <span>{displayTypeFr(match.type)}</span>
-              <small title={fullLineLabel}>{lineLabel}</small>
-            </button>
-          )
-        })}
+      <div className="document-threat-list shrink-0">
+        {primaryMatches.map((match, index) => renderPill(match, index))}
       </div>
+      {canExpand && (
+        <div className={`document-threat-list-more ${expanded ? 'is-expanded' : ''}`}>
+          <div className="document-threat-list-more-inner">
+            <div className="document-threat-list">
+              {overflowMatches.map((match, index) => renderPill(match, primaryMatches.length + index))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

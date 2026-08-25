@@ -537,3 +537,12 @@
 .x-icon::after {
   transform: rotate(-45deg);
 }
+
+.attachment-chip {
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  flex: 0 0 220px;
+  background-color: #f8fafc;
+  border: 1px solid #f1f5f9;
+}
