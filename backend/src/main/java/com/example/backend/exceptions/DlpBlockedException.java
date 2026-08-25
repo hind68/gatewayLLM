@@ -1,8 +1,9 @@
-package com.example.backend.integration.dlp;
+package com.example.backend.exceptions;
 
-import java.util.Set;
-import java.util.List;
+import com.example.backend.integration.dlp.DlpPublicMatch;
 import com.example.backend.service.DlpAttachmentAnalysis;
+import java.util.List;
+import java.util.Set;
 
 public class DlpBlockedException extends DlpAnalysisException {
 
@@ -13,14 +14,16 @@ public class DlpBlockedException extends DlpAnalysisException {
     private final List<DlpAttachmentAnalysis> attachments;
 
     public DlpBlockedException(String highestSeverity, Set<String> detectedTypes) {
-        this(highestSeverity, detectedTypes, null, List.of());
+        this(highestSeverity, detectedTypes, null, List.of(), List.of());
     }
 
-    public DlpBlockedException(String highestSeverity, Set<String> detectedTypes, String maskedText, List<DlpPublicMatch> matches) {
-        this(highestSeverity, detectedTypes, maskedText, matches, List.of());
-    }
-
-    public DlpBlockedException(String highestSeverity, Set<String> detectedTypes, String maskedText, List<DlpPublicMatch> matches, List<DlpAttachmentAnalysis> attachments) {
+    public DlpBlockedException(
+            String highestSeverity,
+            Set<String> detectedTypes,
+            String maskedText,
+            List<DlpPublicMatch> matches,
+            List<DlpAttachmentAnalysis> attachments
+    ) {
         super("Message blocked by DLP policy");
         this.highestSeverity = highestSeverity;
         this.detectedTypes = detectedTypes == null ? Set.of() : Set.copyOf(detectedTypes);

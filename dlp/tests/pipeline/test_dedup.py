@@ -53,3 +53,25 @@ def test_dedup_removes_all_overlapping_lower_quality_matches():
     assert result[0]["type"] == "openai_api_key"
     assert result[0]["start"] == 15
     assert result[0]["end"] == 62
+
+
+def test_dedup_prefers_specific_passport_and_key_types():
+    matches = [
+        {"type": "alphanumeric_identifier", "start": 0, "end": 9, "source": "regex", "severity": "medium", "score": 0.72, "pattern_name": "lookalike"},
+        {"type": "passport_number", "start": 0, "end": 9, "source": "regex", "severity": "high", "score": 0.72, "pattern_name": "passport"},
+        {"type": "hardcoded_secret", "start": 20, "end": 50, "source": "regex", "severity": "high", "score": 0.72, "pattern_name": "labeled_secret"},
+        {"type": "openai_api_key", "start": 20, "end": 50, "source": "regex", "severity": "high", "score": 0.72, "pattern_name": "contextual_sk"},
+    ]
+    result = deduplicate_matches(matches)
+    assert [match["type"] for match in result] == ["passport_number", "openai_api_key"]
+
+
+def test_contextual_imei_and_url_password_override_generic_overlap():
+    matches = [
+        {"type": "credit_card", "start": 6, "end": 21, "score": 0.95, "validated": True, "pattern_name": "credit_card"},
+        {"type": "imei", "start": 6, "end": 21, "score": 0.72, "pattern_name": "imei_contextual"},
+        {"type": "email", "start": 40, "end": 80, "score": 0.72, "pattern_name": "email"},
+        {"type": "hardcoded_secret", "start": 40, "end": 57, "score": 0.72, "pattern_name": "url_embedded_password"},
+    ]
+    result = deduplicate_matches(matches)
+    assert [match["type"] for match in result] == ["imei", "hardcoded_secret"]

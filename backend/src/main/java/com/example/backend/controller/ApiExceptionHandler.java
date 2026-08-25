@@ -1,8 +1,8 @@
 package com.example.backend.controller;
 
-import com.example.backend.integration.dlp.DlpBlockedException;
+import com.example.backend.exceptions.DlpBlockedException;
+import com.example.backend.exceptions.DlpUnavailableException;
 import com.example.backend.integration.dlp.DlpPublicMatch;
-import com.example.backend.integration.dlp.DlpUnavailableException;
 import com.example.backend.service.AttachmentLimitExceededException;
 import java.util.List;
 import java.util.Set;
@@ -43,10 +43,10 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(DlpUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    public ApiError handleDlpUnavailable() {
+    public ApiError handleDlpUnavailable(DlpUnavailableException exception) {
         return new ApiError(
                 "DLP_UNAVAILABLE",
-                "Le contrôle de sécurité est indisponible. Le message n’a pas été envoyé au modèle.",
+                exception.getMessage(),
                 Set.of(),
                 null,
                 null,

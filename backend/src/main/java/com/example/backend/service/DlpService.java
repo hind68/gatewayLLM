@@ -1,22 +1,24 @@
 package com.example.backend.service;
 
+import com.example.backend.exceptions.DlpBlockedException;
+import com.example.backend.exceptions.DlpInvalidResponseException;
+import com.example.backend.exceptions.DlpUnavailableException;
 import com.example.backend.integration.dlp.DlpAnalysisResponse;
-import com.example.backend.integration.dlp.DlpBlockedException;
 import com.example.backend.integration.dlp.DlpClient;
 import com.example.backend.integration.dlp.DlpDecision;
-import com.example.backend.integration.dlp.DlpInvalidResponseException;
 import com.example.backend.integration.dlp.DlpMatch;
 import com.example.backend.integration.dlp.DlpMultiSourceAnalysisResponse;
 import com.example.backend.integration.dlp.DlpPublicMatch;
 import com.example.backend.integration.dlp.DlpSourceResult;
-import com.example.backend.integration.dlp.DlpUnavailableException;
-import java.util.Comparator;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,16 +33,22 @@ import org.springframework.web.multipart.MultipartFile;
  * qui arrête la requête.</p>
  */
 public class DlpService {
-
     private static final String SUCCESS_STATUS = "SUCCESS";
     private static final int APPROX_CHARS_PER_TOKEN = 4;
-
     private final DlpClient dlpClient;
+    private final FilteredMessageAuditWriter auditWriter;
     @Value("${app.attachments.max-llm-characters:40000}")
     private int maxLlmCharacters = 40_000;
 
-    public DlpService(DlpClient dlpClient) {
+    @Autowired
+    public DlpService(DlpClient dlpClient, FilteredMessageAuditWriter auditWriter) {
         this.dlpClient = dlpClient;
+        this.auditWriter = auditWriter;
+    }
+
+    /** Compatibility constructor for callers that do not configure audit persistence. */
+    public DlpService(DlpClient dlpClient) {
+        this(dlpClient, null);
     }
 
     /**
@@ -48,23 +56,47 @@ public class DlpService {
      * tous les deux masked_text du service DLP, tandis que BLOCK ou une réponse
      * mal formée échouent fermées avant toute création de requête LLM.
      */
-    public String safeTextForLlm(String text, String userId) {
-        DlpAnalysisResponse response = dlpClient.analyse(text, userId);
+    public String safeTextForLlm(String text, String userId, List<String> bannedWords) {
+        DlpAnalysisResponse response = dlpClient.analyse(text, userId, bannedWords);
         validateResponse(response);
-
         if (response.decision() == DlpDecision.BLOCK) {
             throw new DlpBlockedException(
                     response.highestSeverity(),
                     detectedTypes(response),
                     response.maskedText(),
-                    publicMatches(null, "message", text, response.matches())
+                    publicMatches(null, "message", text, response.matches()),
+                    List.of()
             );
         }
-
         if (response.maskedText() == null) {
             throw new DlpInvalidResponseException("DLP response did not include masked_text");
         }
+        return response.maskedText();
+    }
 
+    public String safeTextForLlm(String text, String userId) {
+        return safeTextForLlm(text, userId, List.of());
+    }
+
+    public String safeUserMessage(String text, UUID userKeycloakId, String dlpUserId, List<String> bannedWords) {
+        DlpAnalysisResponse response = dlpClient.analyse(text, dlpUserId, bannedWords);
+        validateResponse(response);
+        if (response.decision() == DlpDecision.BLOCK) {
+            if (auditWriter != null) {
+                auditWriter.recordBlocked(userKeycloakId, text, reasonFrom(response), response);
+            }
+            throw new DlpBlockedException(
+                    response.highestSeverity(),
+                    detectedTypes(response),
+                    response.maskedText(),
+                    publicMatches(null, "message", text, response.matches()),
+                    List.of()
+            );
+        }
+        if (response.maskedText() == null) throw new DlpInvalidResponseException("DLP response did not include masked_text");
+        if (response.decision() == DlpDecision.MASK && auditWriter != null) {
+            auditWriter.recordRedacted(userKeycloakId, text, response.maskedText(), reasonFrom(response), response);
+        }
         return response.maskedText();
     }
 
@@ -72,7 +104,13 @@ public class DlpService {
      * Analyse un message et ses pièces jointes comme une seule soumission
      * logique, puis construit le prompt sûr pour le LLM sélectionné.
      */
-    public DlpSafeMessage safeMessageForLlm(String text, List<MultipartFile> files, String userId) {
+    public DlpSafeMessage safeMessageForLlm(
+            String text,
+            List<MultipartFile> files,
+            UUID userKeycloakId,
+            String userId,
+            List<String> bannedWords
+    ) {
         String normalizedText = text == null ? "" : text.trim();
         List<MultipartFile> safeFiles = files == null ? List.of() : files.stream()
                 .filter(file -> file != null && !file.isEmpty())
@@ -81,47 +119,51 @@ public class DlpService {
             throw new DlpInvalidResponseException("Message text or attachments are required");
         }
 
-        DlpMultiSourceAnalysisResponse response = dlpClient.analyseMessage(normalizedText, safeFiles, userId);
+        DlpMultiSourceAnalysisResponse response = dlpClient.analyseMessage(normalizedText, safeFiles, userId, bannedWords);
         validateMultiSourceResponse(response);
-
+        if (!SUCCESS_STATUS.equalsIgnoreCase(response.status())) {
+            throw new DlpUnavailableException(sourceError(response));
+        }
+        DlpSourceResult failedSource = response.results().stream()
+                .filter(result -> !SUCCESS_STATUS.equalsIgnoreCase(result.status()))
+                .findFirst()
+                .orElse(null);
+        if (failedSource != null) {
+            throw new DlpUnavailableException(sourceError(failedSource));
+        }
         List<DlpAttachmentAnalysis> attachments = attachmentAnalyses(response, safeFiles);
-        if (response.status() == null || !SUCCESS_STATUS.equalsIgnoreCase(response.status()) || response.decision() == DlpDecision.BLOCK) {
-            // Toute erreur d'extraction sur une source devient un blocage au
-            // niveau passerelle, car une analyse partielle ne prouve pas que la
-            // soumission complète est sûre.
+        String safeMessage = sourceText(response.results(), "message");
+        if (response.decision() == DlpDecision.BLOCK) {
             throw new DlpBlockedException(
                     response.highestSeverity(),
                     detectedTypes(response),
                     persistedBlockedText(response, attachments),
-                    publicMatches(response),
+                    publicMatches(response, attachments),
                     attachments
             );
         }
-
-        List<DlpSourceResult> results = response.results() == null ? List.of() : response.results();
-        String safeMessageText = sourceText(results, "message");
-        String safePrompt = buildSafePrompt(safeMessageText, results);
-        int attachmentCharacters = attachmentSafeCharacters(results);
+        String safePrompt = buildSafePrompt(safeMessage, response.results());
+        int attachmentCharacters = attachments.stream()
+                .mapToInt(DlpAttachmentAnalysis::safeCharacters)
+                .sum();
         if (attachmentCharacters > maxLlmCharacters) {
             throw new DlpInvalidResponseException(
                     "Les pieces jointes analysees sont trop longues pour etre envoyees au modele dans cette version. "
                             + "Reduisez le document ou le nombre de fichiers."
             );
         }
-
-        String persistedContent = normalizedText.isBlank() ? attachmentSummary(attachments) : safeMessageText;
+        String persistedContent = normalizedText.isBlank() ? attachmentSummary(attachments) : safeMessage;
         return new DlpSafeMessage(safePrompt, persistedContent, response.highestSeverity(), attachments);
     }
 
-    private void validateResponse(DlpAnalysisResponse response) {
-        if (response == null || response.status() == null || response.decision() == null) {
-            throw new DlpInvalidResponseException("DLP response is incomplete");
-        }
-        if (!SUCCESS_STATUS.equalsIgnoreCase(response.status())) {
-            throw new DlpUnavailableException("DLP analysis did not complete successfully");
-        }
+    public DlpSafeMessage safeMessageForLlm(String text, List<MultipartFile> files, String userId) {
+        return safeMessageForLlm(text, files, null, userId, List.of());
     }
 
+    private void validateResponse(DlpAnalysisResponse response) {
+        if (response == null || response.status() == null || response.decision() == null) throw new DlpInvalidResponseException("DLP response is incomplete");
+        if (!SUCCESS_STATUS.equalsIgnoreCase(response.status())) throw new DlpUnavailableException("DLP analysis did not complete successfully");
+    }
     private void validateMultiSourceResponse(DlpMultiSourceAnalysisResponse response) {
         if (response == null || response.status() == null || response.decision() == null || response.results() == null) {
             throw new DlpInvalidResponseException("DLP response is incomplete");
@@ -130,33 +172,87 @@ public class DlpService {
             if (result == null || result.source() == null || result.status() == null || result.decision() == null) {
                 throw new DlpInvalidResponseException("DLP source response is incomplete");
             }
-            if (result.decision() != DlpDecision.BLOCK && result.maskedText() == null) {
+            if (SUCCESS_STATUS.equalsIgnoreCase(result.status())
+                    && result.decision() != DlpDecision.BLOCK
+                    && result.maskedText() == null) {
                 // Les résultats non bloquants doivent inclure masked_text, car
                 // c'est le seul contenu autorisé à sortir de la frontière DLP.
                 throw new DlpInvalidResponseException("DLP source response did not include masked_text");
             }
         }
     }
-
-    private Set<String> detectedTypes(DlpAnalysisResponse response) {
-        if (response.matches() == null) {
-            return Set.of();
-        }
-        return response.matches().stream()
-                .map(DlpMatch::type)
-                .filter(type -> type != null && !type.isBlank())
-                .collect(Collectors.toUnmodifiableSet());
+    private Set<String> detectedTypes(DlpAnalysisResponse response) { return response.matches() == null ? Set.of() : response.matches().stream().map(DlpMatch::type).filter(type -> type != null && !type.isBlank()).collect(Collectors.toUnmodifiableSet()); }
+    private Set<String> detectedTypes(DlpMultiSourceAnalysisResponse response) { return response.results().stream().flatMap(result -> result.matches() == null ? java.util.stream.Stream.empty() : result.matches().stream()).map(DlpMatch::type).filter(type -> type != null && !type.isBlank()).collect(Collectors.toCollection(LinkedHashSet::new)); }
+    private String reasonFrom(DlpAnalysisResponse response) { Set<String> types = detectedTypes(response); return types.isEmpty() ? "policy_match" : String.join(",", types); }
+    private String sourceError(DlpMultiSourceAnalysisResponse response) {
+        return response.errors() == null || response.errors().isEmpty()
+                ? "DLP could not process the uploaded file"
+                : sourceError(response.errors().get(0).code(), response.errors().get(0).message());
+    }
+    private String sourceError(DlpSourceResult source) {
+        if (source.errors() == null || source.errors().isEmpty()) return "DLP could not process " + source.source();
+        return sourceError(source.errors().get(0).code(), source.errors().get(0).message());
+    }
+    private String sourceError(String code, String message) {
+        return "DLP file processing failed" + (code == null || code.isBlank() ? "" : " [" + code + "]")
+                + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
-    private Set<String> detectedTypes(DlpMultiSourceAnalysisResponse response) {
-        if (response.results() == null) {
-            return Set.of();
+    private List<DlpAttachmentAnalysis> attachmentAnalyses(DlpMultiSourceAnalysisResponse response, List<MultipartFile> files) {
+        List<DlpAttachmentAnalysis> values = new ArrayList<>();
+        for (int index = 0; index < files.size(); index++) {
+            MultipartFile file = files.get(index);
+            String filename = sanitizeFilename(file.getOriginalFilename());
+            DlpSourceResult result = attachmentResult(response, filename, index);
+            String source = result == null ? filename : sanitizeFilename(sourceFilename(result.source()));
+            String extractedText = result == null || result.extractedText() == null ? "" : result.extractedText();
+            String maskedText = result == null ? "" : maskedTextOrFallback(result, extractedText);
+            String decision = result == null || result.decision() == null ? "BLOCK" : result.decision().name();
+            String status = result == null ? "ERROR" : result.status();
+            List<DlpPublicMatch> matches = publicMatches(
+                    null,
+                    source,
+                    extractedText,
+                    result == null ? List.of() : result.matches()
+            );
+            values.add(new DlpAttachmentAnalysis(
+                    source,
+                    filename,
+                    safeMimeType(file.getContentType()),
+                    file.getSize(),
+                    decision,
+                    maskedText.length(),
+                    estimateTokens(maskedText.length()),
+                    status,
+                    extractedText,
+                    maskedText,
+                    matches
+            ));
         }
-        return response.results().stream()
-                .flatMap(result -> result.matches() == null ? java.util.stream.Stream.empty() : result.matches().stream())
-                .map(DlpMatch::type)
-                .filter(type -> type != null && !type.isBlank())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return values;
+    }
+    private DlpSourceResult attachmentResult(DlpMultiSourceAnalysisResponse response, String filename, int index) {
+        List<DlpSourceResult> attachmentResults = response.results().stream().filter(item -> !"message".equals(item.source())).toList();
+        return attachmentResults.stream()
+                .filter(item -> sanitizeFilename(sourceFilename(item.source())).equals(filename))
+                .findFirst()
+                .orElse(index >= 0 && index < attachmentResults.size() ? attachmentResults.get(index) : null);
+    }
+    private List<DlpPublicMatch> publicMatches(DlpMultiSourceAnalysisResponse response, List<DlpAttachmentAnalysis> attachments) {
+        List<DlpPublicMatch> matches = new ArrayList<>();
+        response.results().stream()
+                .filter(result -> "message".equals(result.source()) && result.matches() != null)
+                .forEach(result -> matches.addAll(publicMatches(
+                        null,
+                        "message",
+                        result.extractedText() == null ? "" : result.extractedText(),
+                        result.matches()
+                )));
+        attachments.stream()
+                .filter(attachment -> attachment.matches() != null)
+                .flatMap(attachment -> attachment.matches().stream())
+                .forEach(matches::add);
+        return matches;
     }
 
     private List<DlpPublicMatch> publicMatches(Long attachmentId, String source, String text, List<DlpMatch> matches) {
@@ -178,51 +274,12 @@ public class DlpService {
                 .toList();
     }
 
-    private List<DlpPublicMatch> publicMatches(DlpMultiSourceAnalysisResponse response) {
-        if (response.results() == null) {
-            return List.of();
+    private String sourceFilename(String value) {
+        if (value == null) {
+            return null;
         }
-        List<DlpPublicMatch> matches = new ArrayList<>();
-        for (DlpSourceResult result : response.results()) {
-            String text = result.extractedText() == null ? "" : result.extractedText();
-            matches.addAll(publicMatches(null, result.source(), text, result.matches()));
-        }
-        return matches;
-    }
-
-    private List<DlpAttachmentAnalysis> attachmentAnalyses(DlpMultiSourceAnalysisResponse response, List<MultipartFile> files) {
-        List<DlpSourceResult> results = response.results() == null ? List.of() : response.results();
-        List<DlpAttachmentAnalysis> metadata = new ArrayList<>();
-        for (MultipartFile file : files) {
-            String filename = sanitizeFilename(file.getOriginalFilename());
-            DlpSourceResult result = findSource(results, filename);
-            String extractedText = result == null || result.extractedText() == null ? "" : result.extractedText();
-            String maskedText = result == null ? "" : maskedTextOrFallback(result, extractedText);
-            String decision = result == null || result.decision() == null ? "BLOCK" : result.decision().name();
-            String status = result == null ? "ERROR" : result.status();
-            metadata.add(new DlpAttachmentAnalysis(
-                    result == null ? filename : result.source(),
-                    filename,
-                    safeMimeType(file.getContentType()),
-                    file.getSize(),
-                    decision,
-                    maskedText.length(),
-                    estimateTokens(maskedText.length()),
-                    status,
-                    extractedText,
-                    maskedText,
-                    publicMatches(null, result == null ? filename : result.source(), extractedText, result == null ? List.of() : result.matches())
-            ));
-        }
-        return metadata;
-    }
-
-    private DlpSourceResult findSource(List<DlpSourceResult> results, String filename) {
-        return results.stream()
-                .filter(result -> !"message".equals(result.source()))
-                .filter(result -> sanitizeFilename(result.source()).equals(filename))
-                .findFirst()
-                .orElse(null);
+        int separator = Math.max(value.lastIndexOf(':'), Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')));
+        return separator >= 0 && separator + 1 < value.length() ? value.substring(separator + 1) : value;
     }
 
     private String maskedTextOrFallback(DlpSourceResult result, String extractedText) {

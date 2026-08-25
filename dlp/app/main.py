@@ -1,24 +1,27 @@
 import io
+import json
 import os
 import tempfile
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from PIL import Image, UnidentifiedImageError
 
+from app.detectors.banned_words import detect_banned_words
 from app.schemas import AnalyseRequest, AnalyseResponse, MultiSourceAnalyseResponse
 from app.detectors.language import detect_language
-from app.detectors.regex_detector import run_regex_detectors
+from app.detectors.regex_detector import run_regex_detectors, replace_patterns, _PATTERNS_FILE
 from app.detectors.presidio_detector import detect_with_presidio, warm_up_models
+from app.detectors.transformer_detector import detect_with_transformer
 from app.pipeline.dedup import deduplicate_matches
 from app.pipeline.ids import assign_ids
 from app.pipeline.masking import is_neutralized_placeholder_value, mask_text
 from app.pipeline.alerting import check_and_log_alerts
 from app.pipeline.decision import evaluate_decision, highest_severity, strip_sensitive_values
-from app.config import DLP_MAX_ATTACHMENTS, DLP_MAX_TEXT_LENGTH, MAX_UPLOAD_BYTES
+from app.config import DLP_MAX_ATTACHMENTS, DLP_MAX_TEXT_LENGTH, MAX_UPLOAD_BYTES, DLP_ADMIN_KEY
 from app.ingestion.pdf_parser import extract_text_from_pdf_with_ocr
 from app.ingestion.ocr import extract_text_from_image_object, OCRExtractionError
 from app.ingestion.docx_parser import extract_text_from_docx
@@ -71,6 +74,32 @@ app = FastAPI(title="Secure LLM DLP Service", version="0.1.0", lifespan=lifespan
 app.add_middleware(MaxBodySizeMiddleware)
 
 
+def _require_admin_key(value: str | None) -> None:
+    if not DLP_ADMIN_KEY or value != DLP_ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid DLP administration key")
+
+
+@app.get("/admin/patterns")
+def get_admin_patterns(x_dlp_admin_key: str | None = Header(default=None)):
+    _require_admin_key(x_dlp_admin_key)
+    import json
+    if not _PATTERNS_FILE.exists():
+        return {"patterns": []}
+    return json.loads(_PATTERNS_FILE.read_text(encoding="utf-8"))
+
+
+@app.put("/admin/patterns")
+def update_admin_patterns(payload: dict, x_dlp_admin_key: str | None = Header(default=None)):
+    _require_admin_key(x_dlp_admin_key)
+    patterns = payload.get("patterns")
+    if not isinstance(patterns, list):
+        raise HTTPException(status_code=400, detail="patterns must be a list")
+    try:
+        return {"patterns": replace_patterns(patterns)}
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def _read_upload_limited(file: UploadFile) -> bytes:
     content = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
@@ -84,7 +113,6 @@ def _error_response(code: str = "EXTRACTION_FAILED", message: str = "The content
         "decision": "BLOCK",
         "flagged": None,
         "highest_severity": None,
-        "extracted_text": None,
         "masked_text": None,
         "matches": [],
         "errors": [{"code": code, "message": message}],
@@ -92,14 +120,12 @@ def _error_response(code: str = "EXTRACTION_FAILED", message: str = "The content
 
 
 def _success_response(text: str, matches: list[dict], user_id: str | None = None, filename: str | None = None) -> dict:
-    """
-    Construit la réponse DLP publique sans retourner les valeurs sensibles.
+    """Build the public DLP response without exposing detected values."""
 
-    Le texte original est retourné seulement comme extracted_text pour la
-    persistance backend et les parcours d'inspection ; les objets de match sont
-    nettoyés avant de franchir la frontière API afin que les logs et l'UI ne
-    reçoivent jamais le secret détecté lui-même.
-    """
+    # ALLOW rules are intentionally invisible to downstream masking, alerting,
+    # and response metadata: detection configured as ALLOW must not alter the
+    # message or appear as a security incident.
+    matches = [match for match in matches if match.get("action") != "ALLOW"]
     decision = evaluate_decision(matches)
     check_and_log_alerts(
         matches,
@@ -122,48 +148,47 @@ def _success_response(text: str, matches: list[dict], user_id: str | None = None
 
 
 def _drop_neutralized_placeholder_matches(text: str, matches: list[dict]) -> list[dict]:
-    """
-    Évite de redétecter les placeholders déjà produits par ce service.
-
-    Cela garde le contenu masqué idempotent lorsqu'un prompt sûr stocké est
-    réanalysé par la passerelle Spring avant d'être réutilisé comme contexte.
-    """
-    kept = []
+    """Ignore values that have already been replaced by DLP placeholders."""
+    filtered_matches = []
     for match in matches:
-        value = match.get("value")
-        if value is None:
-            value = text[match["start"]:match["end"]]
-        if is_neutralized_placeholder_value(value):
+        start = match.get("start")
+        end = match.get("end")
+        if (
+            isinstance(start, int)
+            and isinstance(end, int)
+            and 0 <= start < end <= len(text)
+            and is_neutralized_placeholder_value(text[start:end])
+        ):
             continue
-        kept.append(match)
-    return kept
+        filtered_matches.append(match)
+    return filtered_matches
 
 
-def run_pipeline(text: str, user_id: str | None = None, filename: str | None = None) -> dict:
-    """
-    Pipeline partagé unique : détection -> déduplication -> id -> alerte -> masquage.
-    """
+def run_pipeline(
+    text: str,
+    user_id: str | None = None,
+    banned_words: list[str] | None = None,
+    filename: str | None = None,
+) -> dict:
+    """Run the shared detect, deduplicate, alert, and masking pipeline."""
     if len(text) > DLP_MAX_TEXT_LENGTH:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Text exceeds maximum length of {DLP_MAX_TEXT_LENGTH} characters.",
-        )
+        raise HTTPException(status_code=413, detail=f"Text exceeds maximum length of {DLP_MAX_TEXT_LENGTH} characters.")
 
     lang = detect_language(text)
-
-    # Exécuter les regex et notre moteur NER multilingue.
-    combined = _drop_neutralized_placeholder_matches(
-        text,
-        run_regex_detectors(text) + detect_with_presidio(text, language=lang),
+    combined = (
+        run_regex_detectors(text)
+        + detect_with_presidio(text, language=lang)
+        + detect_with_transformer(text)
+        + detect_banned_words(text, banned_words or [])
     )
-
+    combined = _drop_neutralized_placeholder_matches(text, combined)
     deduped = deduplicate_matches(combined)
     final_matches = assign_ids(deduped)
 
+    # Let the built-in helper format the response with the decision, status, and severity!
     return _success_response(text, final_matches, user_id=user_id, filename=filename)
 
-
-def run_pipeline_for_segments(known_text: str, free_text: str, user_id: str | None = None, filename: str | None = None) -> dict:
+def run_pipeline_for_segments(known_text: str, free_text: str, user_id: str | None = None, filename: str | None = None, banned_words: list[str] | None = None) -> dict:
     """
     Variante de run_pipeline pour une entrée déjà séparée entre un segment de
     données connues et un segment de texte libre. Le segment connu passe
@@ -172,9 +197,16 @@ def run_pipeline_for_segments(known_text: str, free_text: str, user_id: str | No
     ensuite fusionnés pour conserver des ids, masquages et alertes cohérents.
     """
     if not known_text:
-        # Aucun segment de type connu : éviter un "\n" initial artificiel qui
-        # décalerait tous les offsets d'un caractère.
-        return run_pipeline(free_text, user_id=user_id, filename=filename)
+        # No known-type segment at all (true for every file type except
+        # CSV/XLSX, and even those if no column header matched) - avoid
+        # a spurious leading "\n" that would shift every offset by one
+        # for no reason.
+        return run_pipeline(
+            free_text,
+            user_id=user_id,
+            banned_words=banned_words,
+            filename=filename,
+        )
 
     combined_text = known_text + "\n" + free_text
     if len(combined_text) > DLP_MAX_TEXT_LENGTH:
@@ -183,12 +215,18 @@ def run_pipeline_for_segments(known_text: str, free_text: str, user_id: str | No
             detail=f"Text exceeds maximum length of {DLP_MAX_TEXT_LENGTH} characters.",
         )
 
-    known_matches = _drop_neutralized_placeholder_matches(known_text, run_regex_detectors(known_text))
+    known_matches = _drop_neutralized_placeholder_matches(
+        known_text,
+        run_regex_detectors(known_text),
+    )
 
     lang = detect_language(free_text)
     free_matches = _drop_neutralized_placeholder_matches(
         free_text,
-        run_regex_detectors(free_text) + detect_with_presidio(free_text, language=lang),
+        run_regex_detectors(free_text)
+        + detect_with_presidio(free_text, language=lang)
+        + detect_with_transformer(free_text)
+        + detect_banned_words(free_text, banned_words or []),
     )
     offset = len(known_text) + 1  # +1 pour le séparateur "\n" ci-dessus.
     for m in free_matches:
@@ -203,7 +241,7 @@ def run_pipeline_for_segments(known_text: str, free_text: str, user_id: str | No
 
 @app.post("/analyse", response_model=AnalyseResponse)
 def analyse(request: AnalyseRequest):
-    return run_pipeline(request.text, user_id=request.user_id)
+    return run_pipeline(request.text, user_id=request.user_id, banned_words=request.banned_words)
 
 
 @app.post("/analyse-image", response_model=AnalyseResponse)
@@ -323,9 +361,7 @@ def ready():
         "status": "READY",
         "presidio": True,
         "languages": ["fr", "en"],
-        "structured_context_languages": ["fr", "en", "ar"],
         "ocr_languages": ["fra", "eng", "ara"],
-        "arabic_ner": False,
     }
 
 
@@ -376,6 +412,7 @@ def analyse_message(
     text: str | None = Form(None),
     files: list[UploadFile] = File([]),
     user_id: str | None = Form(None),
+    banned_words: str | None = Form(None),
 ):
     """
     Analyse le texte utilisateur et toutes les pièces jointes comme une seule
@@ -390,10 +427,18 @@ def analyse_message(
     if len(files) > DLP_MAX_ATTACHMENTS:
         raise HTTPException(status_code=413, detail=f"Too many attachments. Maximum is {DLP_MAX_ATTACHMENTS}.")
 
+    try:
+        parsed_banned_words = json.loads(banned_words) if banned_words else []
+        if not isinstance(parsed_banned_words, list):
+            parsed_banned_words = []
+    except (TypeError, ValueError):
+        # The gateway sends one word per line for multipart compatibility.
+        parsed_banned_words = [word.strip() for word in (banned_words or "").splitlines() if word.strip()]
+
     results = []
 
     if text:
-        results.append({"source": "message", **run_pipeline(text, user_id=user_id)})
+        results.append({"source": "message", **run_pipeline(text, user_id=user_id, banned_words=parsed_banned_words)})
 
     for file in files:
         source = file.filename or "unknown"
@@ -413,7 +458,7 @@ def analyse_message(
 
         try:
             known_text, free_text = _extract_known_free_text(source, tmp_path)
-            result = run_pipeline_for_segments(known_text, free_text, user_id=user_id)
+            result = run_pipeline_for_segments(known_text, free_text, user_id=user_id, banned_words=parsed_banned_words)
         except HTTPException:
             results.append({"source": source, **_error_response("EXTRACTION_FAILED", "The content could not be safely analysed.")})
             continue

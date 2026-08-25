@@ -10,5 +10,4 @@ public record DlpMultiSourceAnalysisResponse(
         @JsonProperty("highest_severity") String highestSeverity,
         List<DlpSourceResult> results,
         List<DlpError> errors
-) {
-}
+) {}

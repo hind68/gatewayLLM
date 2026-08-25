@@ -1,17 +1,19 @@
 package com.example.backend.integration.dlp;
 
+import com.example.backend.exceptions.DlpAnalysisException;
+import com.example.backend.exceptions.DlpUnavailableException;
 import io.netty.channel.ChannelOption;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Value;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
@@ -50,13 +52,13 @@ public class DlpClient {
      * transport, timeout, HTTP ou forme JSON est converti en erreur
      * d'indisponibilité pour appliquer la politique fail-closed.
      */
-    public DlpAnalysisResponse analyse(String text, String userId) {
+    public DlpAnalysisResponse analyse(String text, String userId, List<String> bannedWords) {
         try {
             return webClient.post()
                     .uri("/analyse")
                     .contentType(APPLICATION_JSON_UTF8)
                     .accept(APPLICATION_JSON_UTF8)
-                    .bodyValue(new DlpAnalysisRequest(text, userId))
+                    .bodyValue(new DlpAnalysisRequest(text, userId, bannedWords))
                     .retrieve()
                     .onStatus(
                             status -> status.isError(),
@@ -72,41 +74,40 @@ public class DlpClient {
         }
     }
 
+    /** Compatibility overload for callers that do not configure banned words. */
+    public DlpAnalysisResponse analyse(String text, String userId) {
+        return analyse(text, userId, List.of());
+    }
+
     /**
      * Envoie le corps du message et toutes les pièces jointes dans une seule
      * requête multipart afin que le DLP produise une décision globale.
      */
-    public DlpMultiSourceAnalysisResponse analyseMessage(String text, List<MultipartFile> files, String userId) {
+    public DlpMultiSourceAnalysisResponse analyseMessage(
+            String text,
+            List<MultipartFile> files,
+            String userId,
+            List<String> bannedWords
+    ) {
         try {
             MultipartBodyBuilder body = new MultipartBodyBuilder();
-            if (text != null && !text.isBlank()) {
-                body.part("text", text);
-            }
-            if (userId != null && !userId.isBlank()) {
-                body.part("user_id", userId);
-            }
+            if (text != null && !text.isBlank()) body.part("text", text);
+            if (userId != null && !userId.isBlank()) body.part("user_id", userId);
+            if (bannedWords != null && !bannedWords.isEmpty()) body.part("banned_words", String.join("\n", bannedWords));
             if (files != null) {
                 for (MultipartFile file : files) {
-                    if (file == null || file.isEmpty()) {
-                        continue;
-                    }
+                    if (file == null || file.isEmpty()) continue;
                     body.part("files", uploadResource(file))
                             .filename(file.getOriginalFilename() == null ? "attachment" : file.getOriginalFilename())
                             .contentType(safeMediaType(file.getContentType()));
                 }
             }
-
-            return webClient.post()
-                    .uri("/analyse-message")
+            return webClient.post().uri("/analyse-message")
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .accept(APPLICATION_JSON_UTF8)
                     .bodyValue(body.build())
                     .retrieve()
-                    .onStatus(
-                            status -> status.isError(),
-                            response -> response.releaseBody()
-                                    .thenReturn(new DlpUnavailableException("DLP service returned an error"))
-                    )
+                    .onStatus(status -> status.isError(), response -> response.releaseBody().thenReturn(new DlpUnavailableException("DLP service returned an error")))
                     .bodyToMono(DlpMultiSourceAnalysisResponse.class)
                     .block(readTimeout);
         } catch (DlpAnalysisException exception) {
@@ -114,6 +115,11 @@ public class DlpClient {
         } catch (RuntimeException exception) {
             throw new DlpUnavailableException("DLP service is unavailable", exception);
         }
+    }
+
+    /** Compatibility overload for callers that do not configure banned words. */
+    public DlpMultiSourceAnalysisResponse analyseMessage(String text, List<MultipartFile> files, String userId) {
+        return analyseMessage(text, files, userId, List.of());
     }
 
     private ByteArrayResource uploadResource(MultipartFile file) {
@@ -133,14 +139,8 @@ public class DlpClient {
         }
     }
 
-    private MediaType safeMediaType(String contentType) {
-        if (contentType == null || contentType.isBlank()) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
-        try {
-            return MediaType.parseMediaType(contentType);
-        } catch (RuntimeException exception) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
+    private MediaType safeMediaType(String value) {
+        if (value == null || value.isBlank()) return MediaType.APPLICATION_OCTET_STREAM;
+        try { return MediaType.parseMediaType(value); } catch (RuntimeException exception) { return MediaType.APPLICATION_OCTET_STREAM; }
     }
 }

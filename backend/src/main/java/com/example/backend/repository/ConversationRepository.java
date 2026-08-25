@@ -13,6 +13,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface ConversationRepository extends JpaRepository<Conversation, Long> {
 
+    long countByModele_Id(Long modelId);
+
     @Query(
             value = """
             select c
@@ -67,6 +69,7 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
             select c
             from Conversation c
             join fetch c.modele
+            join fetch c.utilisateur
             where c.id = :id
               and c.utilisateur = :utilisateur
             """)
