@@ -19,9 +19,6 @@ services:
   litellm:
     image: docker.litellm.ai/berriai/litellm:latest
     container_name: secure-llm-litellm
-    env_file:
-      - path: .env
-        required: false
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
@@ -114,6 +111,7 @@ services:
     environment:
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:?Set KEYCLOAK_ADMIN_USERNAME in .env}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in .env}
+      KEYCLOAK_DEMO_PASSWORD: ${KEYCLOAK_DEMO_PASSWORD:?Set KEYCLOAK_DEMO_PASSWORD in .env}
       GATEWAY_ADMIN_CLIENT_SECRET: ${GATEWAY_ADMIN_CLIENT_SECRET:?Set GATEWAY_ADMIN_CLIENT_SECRET in .env}
       KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-synapse}
     entrypoint: ["/bin/sh", "/opt/keycloak/provision.sh"]

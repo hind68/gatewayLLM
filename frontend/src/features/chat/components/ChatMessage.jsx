@@ -248,38 +248,38 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
       ) : (
         <>
           <div className="dlp-alert-tabs" role="tablist" aria-label="Vues du message bloqué">
-          <button
-            type="button"
-            aria-controls={`dlp-safe-${message.id}`}
-            aria-selected={activeTab === 'safe'}
-            className={activeTab === 'safe' ? 'is-active' : ''}
-            role="tab"
-            onClick={() => setActiveTab('safe')}
-          >
-            Version sécurisée
-          </button>
-          <button
-            type="button"
-            aria-controls={`dlp-original-${message.id}`}
-            aria-selected={activeTab === 'original'}
-            className={activeTab === 'original' ? 'is-active' : ''}
-            disabled={!hasOriginal}
-            role="tab"
-            title={hasOriginal ? undefined : 'Disponible uniquement avant actualisation'}
-            onClick={() => setActiveTab('original')}
-          >
-            Version originale
-          </button>
-          <button
-            type="button"
-            aria-controls={`dlp-location-${message.id}`}
-            aria-selected={activeTab === 'location'}
-            className={activeTab === 'location' ? 'is-active' : ''}
-            role="tab"
-            onClick={() => setActiveTab('location')}
-          >
-            Localisation
-          </button>
+            <button
+              type="button"
+              aria-controls={`dlp-safe-${message.id}`}
+              aria-selected={activeTab === 'safe'}
+              className={activeTab === 'safe' ? 'is-active' : ''}
+              role="tab"
+              onClick={() => setActiveTab('safe')}
+            >
+              Version sécurisée
+            </button>
+            <button
+              type="button"
+              aria-controls={`dlp-original-${message.id}`}
+              aria-selected={activeTab === 'original'}
+              className={activeTab === 'original' ? 'is-active' : ''}
+              disabled={!hasOriginal}
+              role="tab"
+              title={hasOriginal ? undefined : 'Disponible uniquement avant actualisation'}
+              onClick={() => setActiveTab('original')}
+            >
+              Version originale
+            </button>
+            <button
+              type="button"
+              aria-controls={`dlp-location-${message.id}`}
+              aria-selected={activeTab === 'location'}
+              className={activeTab === 'location' ? 'is-active' : ''}
+              role="tab"
+              onClick={() => setActiveTab('location')}
+            >
+              Localisation
+            </button>
           </div>
           {canResendMasked && (
             <div className="dlp-alert-actions">

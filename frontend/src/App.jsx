@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useContext } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AuthContext } from './AuthProvider'
 import useConversations from './features/conversations/hooks/useConversations'
@@ -12,11 +12,11 @@ import { hasAdminRole } from './utils/authUtils'
 function App() {
   const keycloak = useContext(AuthContext)
   const token = keycloak?.token
+  const isAdmin = hasAdminRole(token)
 
   const [notifications, setNotifications] = useState([])
   const notificationIdRef = useRef(0)
   const [showTabs, setShowTabs] = useState(false)
-  const isAdmin = hasAdminRole(token)
   const [showAdminDashboard, setShowAdminDashboardState] = useState(false)
 
   const setShowAdminDashboard = useCallback((nextValue) => {
@@ -117,6 +117,12 @@ function App() {
       showError,
     },
   })
+
+  useEffect(() => {
+    if (notifications.length === 0) return undefined
+    const timeout = window.setTimeout(clearFeedback, 5000)
+    return () => window.clearTimeout(timeout)
+  }, [notifications, clearFeedback])
 
   const conversationProps = {
     ...conversations,

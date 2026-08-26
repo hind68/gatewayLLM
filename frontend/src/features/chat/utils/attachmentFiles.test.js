@@ -3,15 +3,15 @@ import { ACCEPTED_ATTACHMENT_EXTENSIONS, getAttachmentIconSrc } from './attachme
 
 describe('attachment file helpers', () => {
   it('maps text image and code extensions to the shared icons', () => {
-    expect(getAttachmentIconSrc('notes.txt')).toBe('/assets/files%20types/text.png')
-    expect(getAttachmentIconSrc('photo.webp')).toBe('/assets/files%20types/image.png')
-    expect(getAttachmentIconSrc('script.ts')).toBe('/assets/files%20types/code.png')
+    expect(getAttachmentIconSrc('notes.txt')).toBe('/assets/text.png')
+    expect(getAttachmentIconSrc('photo.webp')).toBe('/assets/photo.png')
+    expect(getAttachmentIconSrc('script.ts')).toBe('/assets/script.png')
   })
 
   it('keeps specific icons for the main document types', () => {
-    expect(getAttachmentIconSrc('report.pdf')).toBe('/assets/files%20types/pdf.png')
-    expect(getAttachmentIconSrc('contract.docx')).toBe('/assets/files%20types/doc.png')
-    expect(getAttachmentIconSrc('sheet.csv')).toBe('/assets/files%20types/sheets.png')
+    expect(getAttachmentIconSrc('report.pdf')).toBe('/assets/pdf.png')
+    expect(getAttachmentIconSrc('contract.docx')).toBe('/assets/doc.png')
+    expect(getAttachmentIconSrc('sheet.csv')).toBe('/assets/sheets.png')
     expect(getAttachmentIconSrc('archive.zip')).toBe('/assets/zip.png')
   })
 

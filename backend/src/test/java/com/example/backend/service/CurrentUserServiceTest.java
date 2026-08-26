@@ -28,26 +28,31 @@ class CurrentUserServiceTest {
     @InjectMocks
     private CurrentUserService currentUserService;
 
+    private static final String SUBJECT_123 = "00000000-0000-0000-0000-000000000123";
+    private static final String SUBJECT_456 = "00000000-0000-0000-0000-000000000456";
+    private static final String SUBJECT_789 = "00000000-0000-0000-0000-000000000789";
+    private static final String SUBJECT_999 = "00000000-0000-0000-0000-000000000999";
+
     @Test
     void resolveReturnsExistingUserForJwtSubject() {
-        Jwt jwt = jwt("user-123", "Alice");
-        Utilisateur existing = new Utilisateur("user-123", "Alice");
-        when(utilisateurRepository.findByExternalId("user-123")).thenReturn(Optional.of(existing));
+        Jwt jwt = jwt(SUBJECT_123, "Alice");
+        Utilisateur existing = new Utilisateur(SUBJECT_123, "Alice");
+        when(utilisateurRepository.findByExternalId(SUBJECT_123)).thenReturn(Optional.of(existing));
 
         assertThat(currentUserService.resolve(jwt)).isSameAs(existing);
-        verify(utilisateurRepository).findByExternalId("user-123");
+        verify(utilisateurRepository).findByExternalId(SUBJECT_123);
     }
 
     @Test
     void resolveCreatesUserUsingDisplayNameClaimWhenSubjectIsNew() {
-        Jwt jwt = jwt("user-456", "Bob");
-        when(utilisateurRepository.findByExternalId("user-456")).thenReturn(Optional.empty());
+        Jwt jwt = jwt(SUBJECT_456, "Bob");
+        when(utilisateurRepository.findByExternalId(SUBJECT_456)).thenReturn(Optional.empty());
         when(utilisateurRepository.save(any(Utilisateur.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         Utilisateur resolved = currentUserService.resolve(jwt);
 
-        assertThat(resolved.getExternalId()).isEqualTo("user-456");
+        assertThat(resolved.getExternalId()).isEqualTo(SUBJECT_456);
         assertThat(resolved.getNomAffichage()).isEqualTo("Bob");
         verify(utilisateurRepository).save(any(Utilisateur.class));
     }
@@ -56,10 +61,10 @@ class CurrentUserServiceTest {
     void resolveFallsBackToPreferredUsernameThenDefaultDisplayName() {
         Jwt preferredUsernameJwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
-                .subject("user-789")
+                .subject(SUBJECT_789)
                 .claim("preferred_username", "charlie")
                 .build();
-        when(utilisateurRepository.findByExternalId("user-789")).thenReturn(Optional.empty());
+        when(utilisateurRepository.findByExternalId(SUBJECT_789)).thenReturn(Optional.empty());
         when(utilisateurRepository.save(any(Utilisateur.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -69,13 +74,28 @@ class CurrentUserServiceTest {
 
         Jwt defaultJwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
-                .subject("user-999")
+                .subject(SUBJECT_999)
                 .build();
-        when(utilisateurRepository.findByExternalId("user-999")).thenReturn(Optional.empty());
+        when(utilisateurRepository.findByExternalId(SUBJECT_999)).thenReturn(Optional.empty());
 
         Utilisateur fallback = currentUserService.resolve(defaultJwt);
 
         assertThat(fallback.getNomAffichage()).isEqualTo("Utilisateur");
+    }
+
+    @Test
+    void resolveRejectsMissingOrNonUuidSubjectJustLikeKeycloakId() {
+        Jwt invalid = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("not-a-uuid")
+                .build();
+
+        assertThatThrownBy(() -> currentUserService.resolve(invalid))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Authenticated user identity is invalid");
+        assertThatThrownBy(() -> currentUserService.resolve(null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Authenticated user identity is missing");
     }
 
     @Test

@@ -10,11 +10,8 @@ until "$KCADM" config credentials \
   --server "$SERVER" \
   --realm master \
   --user "$KEYCLOAK_ADMIN_USERNAME" \
-  --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1; do
-  sleep 2
-done
-
-until "$KCADM" get "realms/${REALM}" >/dev/null 2>&1; do
+  --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
+  && "$KCADM" get "realms/${REALM}" >/dev/null 2>&1; do
   sleep 2
 done
 
@@ -50,6 +47,18 @@ ensure_user_profile() {
 
 ensure_user_profile admin Synapse Admin
 ensure_user_profile user Synapse User
+
+set_demo_password() {
+  username="$1"
+  user_id="$("$KCADM" get users -r "$REALM" -q username="$username" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
+  if [ -n "$user_id" ]; then
+    "$KCADM" set-password -r "$REALM" --userid "$user_id" --new-password "$KEYCLOAK_DEMO_PASSWORD"
+  fi
+}
+
+for demo_user in admin admin1 admin2 extern1 extern2 intern1 intern2 user; do
+  set_demo_password "$demo_user"
+done
 
 synapse_client_id="$("$KCADM" get clients -r "$REALM" -q clientId=synapse-client --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
 if [ -n "$synapse_client_id" ]; then

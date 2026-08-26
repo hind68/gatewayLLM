@@ -43,26 +43,26 @@ public class ChatValidationService {
     }
 
     public void validateLlmAccess(UUID userId, String llmModelAlias, Collection<String> roles) {
+        // A personal restriction always applies, even to an administrator's own
+        // chat session. The ADMIN role only bypasses role-level restrictions.
         boolean userRestricted = llmRestrictionRepo.existsByUserKeycloakIdAndLlmModelAlias(userId, llmModelAlias);
+        if (userRestricted) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User " + userId + " is not permitted to use model '" + llmModelAlias + "'");
+        }
+        boolean isAdmin = roles != null && roles.stream().map(String::toUpperCase).anyMatch("ADMIN"::equals);
+        if (isAdmin) {
+            return;
+        }
         boolean roleRestricted = roles != null && roles.stream()
                 .map(String::toUpperCase)
                 .anyMatch(role -> roleLlmRestrictionRepo.findByRoleName(role).stream()
                         .anyMatch(restriction -> llmModelAlias.equals(restriction.getLlmModelAlias())));
-        if (userRestricted || roleRestricted) {
+        if (roleRestricted) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "User " + userId + " is not permitted to use model '" + llmModelAlias + "'");
         }
     }
 
     public boolean isLlmAllowed(UUID userId, String llmModelAlias, Collection<String> roles) {
-        // An explicit per-user restriction must also hide the model for an
-        // administrator's own chat session. The admin role may bypass role
-        // restrictions, but it must not bypass a personal restriction.
-        if (llmRestrictionRepo.existsByUserKeycloakIdAndLlmModelAlias(userId, llmModelAlias)) {
-            return false;
-        }
-        if (roles != null && roles.stream().map(String::toUpperCase).anyMatch("ADMIN"::equals)) {
-            return true;
-        }
         try {
             validateLlmAccess(userId, llmModelAlias, roles);
             return true;

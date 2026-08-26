@@ -42,12 +42,12 @@ export async function apiFetchResponse(path, options = {}) {
   }
 
   const response = await fetch(buildApiUrl(path), prepareOptions(options))
-  
+
   if (response.status === 401) {
     keycloak.login()
     throw new ApiError('Unauthorized', { status: 401 })
   }
-  
+
   if (!response.ok) {
     throw await createApiError(response)
   }

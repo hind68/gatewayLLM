@@ -568,10 +568,10 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public SseEmitter streamSecureAttachment(Long conversationId, Long attachmentId) {
+    public SseEmitter streamSecureAttachment(Long conversationId, Long attachmentId, Jwt jwt) {
         SseEmitter emitter = new SseEmitter(0L);
         try {
-            String maskedText = attachmentService.maskedTextForConversationAttachment(attachmentId, conversationId);
+            String maskedText = attachmentService.maskedTextForConversationAttachment(attachmentId, conversationId, jwt);
             if (maskedText == null || maskedText.isBlank()) {
                 throw new ResponseStatusException(BAD_REQUEST, "Secure attachment content is empty");
             }

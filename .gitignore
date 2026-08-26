@@ -3,6 +3,7 @@
 !.env.example
 node_modules/
 target/
+/.m2/
 .idea/
 .vscode/
 .DS_Store

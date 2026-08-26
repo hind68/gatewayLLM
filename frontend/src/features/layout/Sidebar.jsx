@@ -258,7 +258,6 @@ export default function Sidebar({
             </section>
           </div>
 
-
           {admin?.isAdmin && (
             <div className="sidebar-admin-mode-nav">
               <nav className="sidebar-navigation admin-sidebar-navigation" aria-label="Navigation administration">

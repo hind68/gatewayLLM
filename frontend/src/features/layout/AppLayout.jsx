@@ -23,7 +23,7 @@ export default function AppLayout({
   models,
   conversations,
   feedback,
-  admin, // <-- Added admin here
+  admin,
 }) {
   const { state, filters, editing, dialogs, actions, status } = conversations
   const activeConversation = state.activeConversation

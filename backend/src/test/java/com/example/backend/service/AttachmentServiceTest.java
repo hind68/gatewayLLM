@@ -5,8 +5,8 @@ import com.example.backend.dto.AttachmentSecureResponse;
 import com.example.backend.entity.Attachment;
 import com.example.backend.entity.Conversation;
 import com.example.backend.entity.Message;
-import com.example.backend.integration.dlp.DlpPublicMatch;
 import com.example.backend.entity.Utilisateur;
+import com.example.backend.integration.dlp.DlpPublicMatch;
 import com.example.backend.enums.RoleMessage;
 import com.example.backend.enums.StatutMessage;
 import com.example.backend.repository.AttachmentRepository;
@@ -20,8 +20,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -31,17 +35,22 @@ class AttachmentServiceTest {
     private Path storageDir;
 
     private AttachmentRepository attachmentRepository;
-    private DemoUserProvider demoUserProvider;
+    private CurrentUserService currentUserService;
     private Utilisateur user;
+    private Jwt jwt;
     private AttachmentService attachmentService;
 
     @BeforeEach
     void setUp() {
         attachmentRepository = mock(AttachmentRepository.class);
-        demoUserProvider = mock(DemoUserProvider.class);
+        currentUserService = mock(CurrentUserService.class);
         user = mock(Utilisateur.class);
-        when(demoUserProvider.currentUser()).thenReturn(user);
-        attachmentService = new AttachmentService(attachmentRepository, demoUserProvider, storageDir.toString());
+        jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("123e4567-e89b-12d3-a456-426614174000")
+                .build();
+        when(currentUserService.resolve(jwt)).thenReturn(user);
+        attachmentService = new AttachmentService(attachmentRepository, currentUserService, storageDir.toString());
     }
 
     @Test
@@ -54,13 +63,23 @@ class AttachmentServiceTest {
         );
         when(attachmentRepository.findOwnedById(42L, user)).thenReturn(Optional.of(attachment));
 
-        AttachmentSecureResponse secure = attachmentService.secure(42L);
+        AttachmentSecureResponse secure = attachmentService.secure(42L, jwt);
 
         assertThat(secure.attachmentId()).isEqualTo(42L);
         assertThat(secure.maskedText())
                 .isEqualTo("line one\nsecret [OPENAI_API_KEY_1]")
                 .contains("[OPENAI_API_KEY_1]")
                 .doesNotContain("Pieces jointes:");
+    }
+
+    @Test
+    void secureFailsClosedWithoutAJwtInsteadOfServingAnotherAccount() {
+        when(currentUserService.resolve(null))
+                .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user identity is missing"));
+
+        assertThatThrownBy(() -> attachmentService.secure(42L, null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Authenticated user identity is missing");
     }
 
     @Test
@@ -74,7 +93,7 @@ class AttachmentServiceTest {
         Attachment attachment = attachment("secrets.log", extracted, "masked", matches);
         when(attachmentRepository.findOwnedById(42L, user)).thenReturn(Optional.of(attachment));
 
-        AttachmentInspectionResponse inspection = attachmentService.inspection(42L);
+        AttachmentInspectionResponse inspection = attachmentService.inspection(42L, jwt);
 
         assertThat(inspection.attachmentId()).isEqualTo(42L);
         assertThat(inspection.extractedText()).isEqualTo(extracted);
@@ -92,7 +111,7 @@ class AttachmentServiceTest {
         Attachment attachment = attachment("secrets.log", "", "", "secrets.log\temail_1\temail\t0\t18\t1\tmedium\t[EMAIL_1]");
         when(attachmentRepository.findOwnedById(42L, user)).thenReturn(Optional.of(attachment));
 
-        AttachmentInspectionResponse inspection = attachmentService.inspection(42L);
+        AttachmentInspectionResponse inspection = attachmentService.inspection(42L, jwt);
 
         assertThat(inspection.extractedText()).isEmpty();
         assertThat(inspection.matches())
@@ -107,7 +126,7 @@ class AttachmentServiceTest {
         Attachment attachment = attachment("current-name.txt", extracted, "masked", matches);
         when(attachmentRepository.findOwnedById(42L, user)).thenReturn(Optional.of(attachment));
 
-        AttachmentInspectionResponse inspection = attachmentService.inspection(42L);
+        AttachmentInspectionResponse inspection = attachmentService.inspection(42L, jwt);
 
         assertThat(inspection.matches()).hasSize(1);
         assertThat(inspection.matches().get(0).attachmentId()).isEqualTo(42L);
@@ -124,7 +143,7 @@ class AttachmentServiceTest {
         Attachment attachment = attachment("secrets.log", extracted, "", matches);
         when(attachmentRepository.findOwnedById(42L, user)).thenReturn(Optional.of(attachment));
 
-        AttachmentSecureResponse secure = attachmentService.secure(42L);
+        AttachmentSecureResponse secure = attachmentService.secure(42L, jwt);
 
         assertThat(secure.maskedText()).isEqualTo("Email [EMAIL_1]\nToken [OPENAI_API_KEY_1]");
     }

@@ -265,6 +265,12 @@
   transition: opacity 160ms ease;
 }
 
+.sidebar-admin-navigation {
+  flex-shrink: 0;
+  padding: 7px 0;
+  border-top: 1px solid var(--sidebar-divider);
+}
+
 .sidebar-open .recent-nav-button {
   display: none;
 }

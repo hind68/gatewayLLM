@@ -17,7 +17,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +54,32 @@ class ChatValidationServiceTest {
                 .thenReturn(true);
 
         assertThat(service.isLlmAllowed(USER_ID, "secure-groq", List.of("ADMIN"))).isFalse();
+    }
+
+    @Test
+    void adminBypassesRoleRestrictionInValidateLlmAccess() {
+        // isLlmAllowed() and validateLlmAccess() must agree: ADMIN bypasses a
+        // role-level restriction in both, not just in the read-only check used
+        // to build the model picker.
+        RoleLlmRestriction restriction = new RoleLlmRestriction();
+        restriction.setLlmModelAlias("secure-groq");
+        when(userLlmRestrictionRepository.existsByUserKeycloakIdAndLlmModelAlias(USER_ID, "secure-groq"))
+                .thenReturn(false);
+        lenient().when(roleLlmRestrictionRepository.findByRoleName("ADMIN")).thenReturn(List.of(restriction));
+
+        assertThatCode(() -> service.validateLlmAccess(USER_ID, "secure-groq", List.of("ADMIN")))
+                .doesNotThrowAnyException();
+        assertThat(service.isLlmAllowed(USER_ID, "secure-groq", List.of("ADMIN"))).isTrue();
+    }
+
+    @Test
+    void adminDoesNotBypassPersonalRestrictionInValidateLlmAccess() {
+        when(userLlmRestrictionRepository.existsByUserKeycloakIdAndLlmModelAlias(USER_ID, "secure-groq"))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.validateLlmAccess(USER_ID, "secure-groq", List.of("ADMIN")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("not permitted");
     }
 
     @Test
