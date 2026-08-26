@@ -19,7 +19,8 @@
 }
 
 .chat-workspace.is-search-covered {
-  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
 }
 
 .chat-main {
