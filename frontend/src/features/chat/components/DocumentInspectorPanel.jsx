@@ -34,13 +34,19 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
   const [showTextSizeMenu, setShowTextSizeMenu] = useState(false)
   const textSizeControlRef = useRef(null)
 
-  // Reset per-attachment view state during render (React's documented pattern
-  // for "adjusting state when a prop changes") instead of an effect, so
-  // switching documents never renders one frame of the previous document's
-  // state before the reset commits.
-  const [resetKey, setResetKey] = useState(attachmentKey)
-  if (resetKey !== attachmentKey) {
-    setResetKey(attachmentKey)
+  // Reset per-attachment (and per-requested-view) state during render
+  // (React's documented pattern for "adjusting state when a prop changes")
+  // instead of an effect, so switching documents never renders one frame of
+  // the previous document's state before the reset commits. The panel stays
+  // mounted across switches (AppLayout no longer remounts it via `key`) so
+  // this in-place reset is what now keeps every view in sync with the
+  // current attachment/requested tab — including re-jumping to the secure
+  // or detected tab when the same attachment is reopened with a new
+  // requested view.
+  const resetSignature = `${attachmentKey}:${initialMode(target)}`
+  const [resetKey, setResetKey] = useState(resetSignature)
+  if (resetKey !== resetSignature) {
+    setResetKey(resetSignature)
     setActiveTab(initialMode(target))
     setOriginalState(initialOriginalState())
     setInspectionState(initialInspectionState(target))
@@ -311,7 +317,7 @@ export default function DocumentInspectorPanel({ attachment: inspectionTarget, c
 
       <div className="document-inspector-viewer">
         <div className="document-zoom-shell">
-          <article className={pageClass} style={readerStyle}>
+          <article className={pageClass} style={readerStyle} key={`${attachmentKey}-${activeTab}`}>
             {activeTab === 'original' && <OriginalDocumentView documentState={originalState} extractedText={inspectionState.text || target.extractedText} extractionLoading={inspectionState.loading} />}
             {activeTab === 'detected' && <InspectionDocumentView state={{ ...inspectionState, matches: visibleMatches, text: inspectionState.text || target.extractedText }} />}
             {activeTab === 'secure' && <SecureDocumentView state={secureState} />}
@@ -482,15 +488,49 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
   if (!Array.isArray(matches) || matches.length === 0) return null
   const counts = severityCounts(matches)
   const filters = threatFilters(counts)
-  const visibleMatches = filter === 'all' ? matches : matches.filter((match) => severityGroup(match) === filter)
-  const visibleChips = expanded ? visibleMatches : visibleMatches.slice(0, COMPACT_THREAT_LIMIT)
-  const canExpand = visibleMatches.length > COMPACT_THREAT_LIMIT
+  const filteredMatches = filter === 'all' ? matches : matches.filter((match) => severityGroup(match) === filter)
+  // Sort by severity so the most critical detections surface within the
+  // compact (collapsed) view instead of whatever order they were found in.
+  const visibleMatches = [...filteredMatches].sort((a, b) => SEVERITY_RANK[severityGroup(a)] - SEVERITY_RANK[severityGroup(b)])
+  const primaryMatches = visibleMatches.slice(0, COMPACT_THREAT_LIMIT)
+  const overflowMatches = visibleMatches.slice(COMPACT_THREAT_LIMIT)
+  const canExpand = overflowMatches.length > 0
+
+  function renderPill(match, index) {
+    const id = matchKey(match)
+    const severity = severityClass(match)
+    const line = lineNumberForMatch(text, match)
+    const lineLabel = Number.isInteger(line) ? `L${line}` : 'L?'
+    const fullLineLabel = Number.isInteger(line) ? `Ligne ${line}` : 'Ligne inconnue'
+    return (
+      <button
+        type="button"
+        aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
+        aria-pressed={selectedMatchId === id}
+        className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
+        key={`${id}-${index}`}
+        data-target-match-id={id}
+        onClick={() => onSelect(match)}
+        title={`${displaySeverity(match.severity)} - ${displayTypeFr(match.type)} - ${fullLineLabel}`}
+      >
+        <span>{displayTypeFr(match.type)}</span>
+        <small title={fullLineLabel}>{lineLabel}</small>
+      </button>
+    )
+  }
+
   return (
     <div className="document-threat-navigation shrink-0" aria-label="Liste des menaces détectées">
       <div className="document-threat-summary">
         <strong>{threatSummary(counts)}</strong>
         {canExpand && (
-          <button type="button" className="document-threat-toggle" aria-label={expanded ? 'R\u00e9duire' : 'Voir les autres'} onClick={() => setExpanded((current) => !current)}>
+          <button
+            type="button"
+            className="document-threat-toggle"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'R\u00e9duire' : 'Voir les autres'}
+            onClick={() => setExpanded((current) => !current)}
+          >
             <span>{expanded ? 'R\u00e9duire' : 'Voir les autres'}</span>
             <img
               src="/assets/down.png"
@@ -504,7 +544,8 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
           {filters.map((item) => (
             <button
               type="button"
-              className={`severity-${item.key} ${filter === item.key ? 'active' : ''}`.trim()}
+              className={filter === item.key ? 'active' : ''}
+              data-severity={item.key}
               key={item.key}
               onClick={() => {
                 setFilter(item.key)
@@ -516,30 +557,18 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
           ))}
         </div>
       </div>
-      <div className={`document-threat-list shrink-0 ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
-        {visibleChips.map((match, index) => {
-          const id = matchKey(match)
-          const severity = severityClass(match)
-          const line = lineNumberForMatch(text, match)
-          const lineLabel = Number.isInteger(line) ? `L${line}` : 'L?'
-          const fullLineLabel = Number.isInteger(line) ? `Ligne ${line}` : 'Ligne inconnue'
-          return (
-            <button
-              type="button"
-              aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
-              aria-pressed={selectedMatchId === id}
-              className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
-              key={`${id}-${index}`}
-              data-target-match-id={id}
-              onClick={() => onSelect(match)}
-              title={`${displaySeverity(match.severity)} - ${displayTypeFr(match.type)} - ${fullLineLabel}`}
-            >
-              <span>{displayTypeFr(match.type)}</span>
-              <small title={fullLineLabel}>{lineLabel}</small>
-            </button>
-          )
-        })}
+      <div className="document-threat-list shrink-0">
+        {primaryMatches.map((match, index) => renderPill(match, index))}
       </div>
+      {canExpand && (
+        <div className={`document-threat-list-more ${expanded ? 'is-expanded' : ''}`}>
+          <div className="document-threat-list-more-inner">
+            <div className="document-threat-list">
+              {overflowMatches.map((match, index) => renderPill(match, primaryMatches.length + index))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -710,6 +739,8 @@ function threatSummary(counts) {
   return `${counts.total} ${counts.total > 1 ? 'menaces détectées' : 'menace détectée'}`
 }
 
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
+
 function severityGroup(match) {
   const normalized = severityClass(match)
   if (normalized === 'high') return 'high'
@@ -725,17 +756,41 @@ function displayType(type) {
   return String(type || 'donnée sensible').replaceAll('_', ' ')
 }
 
+// Mirrors the DLP severity policy's type vocabulary (dlp/app/policy.py)
+// so every detection type the backend can emit gets a proper French label
+// here instead of falling back to the raw snake_case identifier.
+const DETECTION_TYPE_LABELS = {
+  credit_card: 'Carte bancaire',
+  iban: 'IBAN',
+  moroccan_cin: 'CIN',
+  api_key: 'Clé API',
+  openai_api_key: 'Clé API OpenAI',
+  github_token: 'Token GitHub',
+  jwt_token: 'Jeton JWT',
+  bearer_token: "Jeton d'accès",
+  private_key: 'Clé privée',
+  hardcoded_secret: 'Secret codé en dur',
+  hardcoded_password: 'Mot de passe',
+  connection_string: 'Chaîne de connexion',
+  bank_account: 'Compte bancaire',
+  bic_swift: 'Code BIC / SWIFT',
+  crypto_wallet: 'Portefeuille crypto',
+  cvv: 'CVV',
+  civil_registry_number: "N° d'état civil",
+  ip_address: 'Adresse IP',
+  alphanumeric_identifier: 'Identifiant',
+  email: 'Adresse e-mail',
+  phone_number: 'Numéro de téléphone',
+  person_name: 'Nom',
+  date_of_birth: 'Date de naissance',
+  location: 'Localisation',
+  url: 'URL',
+  organization: 'Organisation',
+}
+
 function displayTypeFr(type) {
   const normalized = String(type || '').toLowerCase()
-  const labels = {
-    ip_address: 'Adresse IP',
-    private_key: 'Clé privée',
-    connection_string: 'Chaîne de connexion',
-    openai_api_key: 'Clé API OpenAI',
-    moroccan_cin: 'CIN',
-    email: 'Adresse e-mail',
-  }
-  return labels[normalized] || displayType(type)
+  return DETECTION_TYPE_LABELS[normalized] || displayType(type)
 }
 
 function displaySeverity(severity) {
@@ -814,7 +869,12 @@ async function previewStateFromBlob(blob, filename, contentType, fallbackText) {
   if (blob && isTextLike(extension, contentType)) {
     return { error: '', html: '', kind: 'text', loading: false, status: '', text: await blob.text(), url: '' }
   }
-  return fallbackOriginalState(fallbackText, fallbackText ? PREVIEW_UNAVAILABLE : EXTRACTION_UNAVAILABLE)
+  // Reaching here means the blob is a real, fetched file that simply isn't one
+  // of the previewable kinds above (e.g. PPTX, XLSX, ZIP) — that's a format
+  // gap, not an extraction failure, so it gets the "not previewable" wording
+  // rather than "extraction impossible" (reserved for actual fetch/parse
+  // errors, handled in the calling effect's catch block).
+  return fallbackOriginalState(fallbackText, PREVIEW_UNAVAILABLE)
 }
 
 function fallbackOriginalState(text, status = PREVIEW_UNAVAILABLE) {

@@ -12,6 +12,7 @@
   transition: transform 0.3s ease-in-out;
 }
 
+
 .document-panel-resizer {
   width: 10px;
   height: 100%;
@@ -66,15 +67,6 @@
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.document-inspector-title span {
-  border-radius: 999px;
-  background: #EEF2FF;
-  color: #3730A3;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
 }
 
 .document-inspector-header > button:not(.document-text-size-trigger) {
@@ -136,22 +128,26 @@
 }
 
 .document-dlp-mark {
+  border: 0;
   border-radius: 4px;
-  padding: 1px 3px;
+  background: rgba(254, 243, 199, 0.58);
+  color: #78350F;
+  font-weight: 600;
+  padding: 1px 4px;
 }
 
 .document-dlp-mark.severity-low {
-  background: #DBEAFE;
-  color: #1E40AF;
+  background: rgba(241, 245, 249, 0.9);
+  color: #475569;
 }
 
 .document-dlp-mark.severity-medium {
-  background: #FEF08A;
-  color: #713F12;
+  background: rgba(254, 243, 199, 0.58);
+  color: #78350F;
 }
 
 .document-dlp-mark.severity-high {
-  background: #FECACA;
+  background: rgba(254, 226, 226, 0.68);
   color: #991B1B;
 }
 
@@ -489,8 +485,6 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.document-inspector-tabs button,
-.document-inspector-tabs button.active,
 .segmented-control button,
 .segmented-control button.active {
   border-color: transparent;
@@ -576,8 +570,8 @@
 }
 
 .document-dlp-mark.is-selected {
-  outline: 2px solid #111827;
-  outline-offset: 2px;
+  outline: 0;
+  box-shadow: 0 0 0 1px #F59E0B;
 }
 
 .document-secure-page {
@@ -615,7 +609,7 @@
   width: 34px;
   height: 34px;
   border: 1px solid #D1D5DB;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: #FFFFFF;
   color: #374151;
   cursor: pointer;
@@ -1368,24 +1362,25 @@
 
 .document-threat-navigation {
   flex: 0 0 auto;
+  border-bottom: 1px solid #E2E8F0;
   background: #F8FAFC;
-  padding: 12px 16px 10px;
+  padding: 12px 16px var(--space-3);
 }
 
 .document-threat-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
+  gap: var(--space-2) 12px;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-3);
 }
 
 .document-threat-summary > strong {
   min-width: 0;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 650;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 700;
   line-height: 1.3;
 }
 
@@ -1393,24 +1388,57 @@
   display: inline-flex;
   flex-wrap: wrap;
   grid-column: 1 / -1;
-  gap: 4px;
+  gap: 6px;
 }
 
 .document-threat-filters button {
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   background: #F1F5F9;
   color: #475569;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
-  padding: 4px 8px;
+  padding: 5px 10px;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.document-threat-filters button:hover {
+  background: #E2E8F0;
 }
 
 .document-threat-filters button.active {
   background: #E2E8F0;
-  color: #0F172A;
+  color: var(--text-primary);
+}
+
+/* Faint severity tint at rest, so the filter row signals where the risk is
+   before a click, not only after one is active. */
+.document-threat-filters button[data-severity="high"]:not(.active) {
+  color: #B42318;
+}
+
+.document-threat-filters button[data-severity="medium"]:not(.active) {
+  color: #92600A;
+}
+
+.document-threat-filters button[data-severity="high"].active {
+  border-color: #FECACA;
+  background: #FEF2F2;
+  color: #B42318;
+}
+
+.document-threat-filters button[data-severity="medium"].active {
+  border-color: #FDE68A;
+  background: #FFFBEB;
+  color: #92600A;
+}
+
+.document-threat-filters button[data-severity="low"].active {
+  border-color: #B9CFE3;
+  background: #EAF1F8;
+  color: #3E5C79;
 }
 
 .document-threat-filters button.severity-high.active {
@@ -1438,7 +1466,7 @@
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0;
+  margin: var(--space-2) 0 0;
   background: transparent;
   overflow: visible;
   padding: 0;
@@ -1454,7 +1482,7 @@
   grid-template-columns: none;
   gap: 8px;
   align-items: center;
-  border: 1px solid #FEF3C7;
+  border: 0;
   border-radius: 999px;
   background: #FFFBEB;
   color: #D97706;
@@ -1468,26 +1496,31 @@
 }
 
 .document-threat-list .document-threat-pill.is-active {
-  border-color: #FDE68A;
   background: #FEF3C7;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px #F59E0B;
 }
 
 .document-threat-list button:hover,
 .document-threat-list .document-threat-pill:hover {
   background: #FEF3C7;
-  border-color: #FDE68A;
 }
 
 .document-threat-list .document-threat-pill.severity-high {
-  border-color: #FEE2E2;
   background: #FEF2F2;
   color: #DC2626;
 }
 
 .document-threat-list .document-threat-pill.severity-high:hover {
   background: #FEE2E2;
-  border-color: #FECACA;
+}
+
+.document-threat-list .document-threat-pill.severity-low {
+  background: #EAF1F8;
+  color: #3E5C79;
+}
+
+.document-threat-list .document-threat-pill.severity-low:hover {
+  background: #DCE8F4;
 }
 
 .document-threat-list .document-threat-pill.severity-medium {
@@ -1602,33 +1635,32 @@
 }
 
 .document-dlp-mark.is-selected {
-  border-color: #F59E0B;
-  background: rgba(253, 230, 138, 0.78);
+  background: rgba(253, 230, 138, 0.9);
   color: #78350F;
   outline: 0;
-}
-
-.document-dlp-mark.severity-low.is-selected {
-  border-color: #3B82F6;
-  background: rgba(219, 234, 254, 0.92);
-  color: #1E3A8A;
-}
-
-.document-dlp-mark.severity-medium.is-selected {
-  border-color: #F97316;
-  background: rgba(254, 215, 170, 0.94);
-  color: #7C2D12;
+  box-shadow: 0 0 0 1px #F59E0B;
 }
 
 .document-threat-list .document-threat-pill.severity-high.is-active {
-  border-color: #FECACA;
   background: #FEE2E2;
+  box-shadow: inset 0 0 0 1px #EF4444;
+}
+
+.document-threat-list .document-threat-pill.severity-low.is-active {
+  background: #DCE8F4;
+  box-shadow: inset 0 0 0 1px #7DA0C4;
 }
 
 .document-dlp-mark.severity-high.is-selected {
-  border-color: #EF4444;
   background: rgba(254, 226, 226, 0.88);
   color: #7F1D1D;
+  box-shadow: 0 0 0 1px #EF4444;
+}
+
+.document-dlp-mark.severity-low.is-selected {
+  background: rgba(191, 219, 254, 0.75);
+  color: #1E3A5F;
+  box-shadow: 0 0 0 1px #6B8FBF;
 }
 
 .document-threat-pill:focus-visible,
@@ -1659,19 +1691,19 @@
 }
 
 .document-inspector-title {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  max-width: 250px;
+  max-width: none;
 }
 
 .document-inspector-title strong {
   display: block;
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 250px;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1742,7 +1774,7 @@
   color: #4B5563;
   cursor: pointer;
   padding: 0;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 500;
   letter-spacing: 0;
   line-height: 1;
@@ -1785,9 +1817,8 @@
 
 .document-text-size-popover button {
   cursor: pointer;
-  font-size: 10px;
-  font-weight: 500;
   min-width: 32px;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .document-text-size-popover button:hover {
@@ -1840,9 +1871,9 @@
   min-height: 100%;
   height: auto;
   margin: 0;
-  border: 1px solid #E2E8F0;
   border-radius: 0;
   background: #F8FAFC;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
   color: #1E293B;
   font-family: Consolas, 'SFMono-Regular', monospace;
   font-size: inherit;
@@ -1870,7 +1901,7 @@
   height: auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 58px minmax(0, 1fr);
   align-items: start;
   column-gap: 0;
   padding: 0 clamp(8px, 2vw, 24px);
@@ -1879,10 +1910,10 @@
 
 .document-line-number {
   grid-column: 1;
-  width: 44px;
+  width: 58px;
   min-width: 0;
-  max-width: 44px;
-  padding-right: 12px;
+  max-width: 58px;
+  padding-right: 14px;
   color: #94A3B8;
   font-family: Consolas, 'SFMono-Regular', monospace;
   font-size: 12px;
@@ -1920,12 +1951,12 @@
 .document-dlp-mark.severity-high {
   display: inline;
   max-width: 100%;
-  border: 1px solid #FDE68A;
+  border: 0;
   border-radius: 4px;
-  background: rgba(254, 243, 199, 0.5);
+  background: rgba(254, 243, 199, 0.58);
   color: #78350F;
   font-weight: 600;
-  padding: 0 4px;
+  padding: 1px 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -1935,11 +1966,24 @@
 }
 
 .document-dlp-mark {
-  background: rgba(254, 243, 199, 0.5);
+  background: rgba(254, 243, 199, 0.58);
   color: #78350F;
   font-weight: 600;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+
+/* Ties the in-text highlight to the same severity color used by the
+   threat chips above, so a high-severity match reads as such directly
+   in the document, not only once selected. */
+.document-dlp-mark.severity-high {
+  background: rgba(254, 226, 226, 0.68);
+  color: #991B1B;
+}
+
+.document-dlp-mark.severity-low {
+  background: rgba(219, 234, 254, 0.55);
+  color: #3E5C79;
 }
 
 @media (max-width: 520px) {
@@ -1951,11 +1995,212 @@
     padding-inline: 8px;
   }
 
-  .document-inspector-header .segmented-control button {
+  .document-segmented-row .segmented-control button {
     padding-inline: 8px;
   }
 
   .document-inspector-title span {
     display: none;
   }
+
+  /* Icon-only actions once the panel is too narrow for labeled buttons to
+     fit without wrapping or overflowing the actionbar. */
+  .document-icon-action.labeled {
+    width: 34px;
+    padding: 0;
+  }
+
+  .document-icon-action.labeled span:not(.check-icon) {
+    display: none;
+  }
+}
+
+/* Short fade when switching between Original / Menaces / Sécurisé, so the
+   content swap doesn't feel like a hard cut when the reader height changes. */
+.document-text-page {
+  animation: document-tab-fade-in 160ms ease-out both;
+}
+
+@keyframes document-tab-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .document-text-page {
+    animation: none;
+  }
+}
+
+/* Final Files tab polish */
+.document-inspector-title {
+  flex: 0 1 auto;
+  max-width: min(52%, 480px);
+}
+
+.document-inspector-title strong {
+  flex: 0 1 auto;
+  max-width: min(34vw, 360px);
+}
+
+.document-inspector-title span {
+  margin-left: 0;
+}
+
+.document-text-size-trigger {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.document-threat-navigation {
+  border-bottom-color: rgba(226, 232, 240, 0.72);
+}
+
+.document-threat-filters button,
+.document-threat-filters button[data-severity="high"]:not(.active),
+.document-threat-filters button[data-severity="medium"]:not(.active) {
+  border-color: transparent;
+  background: #F1F5F9;
+  color: #475569;
+}
+
+.document-threat-filters button:hover,
+.document-threat-filters button.active,
+.document-threat-filters button[data-severity="high"].active,
+.document-threat-filters button[data-severity="medium"].active {
+  border-color: transparent;
+  background: #E2E8F0;
+  color: #111827;
+}
+
+/* LOW keeps its own pastel blue-gray identity instead of collapsing into
+   the same neutral gray as the resting state — it was reading as "just
+   another gray control" next to the secure/masked surfaces. Tinted at rest
+   too (text only, like HIGH/MEDIUM), not just once selected. */
+.document-threat-filters button[data-severity="low"]:not(.active) {
+  color: #3E5C79;
+}
+
+.document-threat-filters button[data-severity="low"].active {
+  border-color: #B9CFE3;
+  background: #EAF1F8;
+  color: #3E5C79;
+}
+
+.document-threat-list .document-threat-pill.is-active {
+  background: #FEF3C7;
+  box-shadow: inset 0 0 0 1px #EAB308;
+}
+
+.document-dlp-mark.is-selected {
+  outline: 0;
+  box-shadow: 0 0 0 1px #EAB308;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .document-threat-list-more {
+    transition: none;
+  }
+}
+
+
+/* Smooth "Voir les autres / R\u00e9duire" reveal: the overflow chips stay
+   mounted at all times (see DetectionIndex) and only this wrapper's height is
+   animated, so expanding/collapsing is a continuous reveal instead of an
+   instant DOM mount/unmount snap. */
+.document-threat-list-more {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.document-threat-list-more.is-expanded {
+  grid-template-rows: 1fr;
+}
+
+.document-threat-list-more-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Reserve room for the longer "Voir les autres" label so swapping to the
+   shorter "R\u00e9duire" doesn't shift the filters row next to it. */
+.document-threat-toggle span {
+  display: inline-block;
+  min-width: 15ch;
+}
+
+/* Keep detections neutral until the user selects one. Severity becomes
+   prominent only for the active filter, chip, and in-text match. */
+.document-dlp-mark.severity-high:not(.is-selected),
+.document-dlp-mark.severity-medium:not(.is-selected),
+.document-dlp-mark.severity-low:not(.is-selected) {
+  background: rgba(254, 243, 199, 0.58);
+  color: #78350F;
+}
+
+.document-threat-filters button[data-severity="high"].active {
+  border-color: #FECACA;
+  background: #FEF2F2;
+  color: #B42318;
+}
+
+.document-threat-filters button[data-severity="medium"].active {
+  border-color: #FDBA74;
+  background: #FFEDD5;
+  color: #C2410C;
+}
+
+.document-threat-filters button[data-severity="low"].active {
+  border-color: #93C5FD;
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
+
+.document-threat-list .document-threat-pill.severity-high.is-active {
+  border-color: #FECACA;
+  background: #FEE2E2;
+  box-shadow: inset 0 0 0 1px #EF4444;
+}
+
+.document-threat-list .document-threat-pill.severity-medium.is-active {
+  border-color: #F97316;
+  background: #FFEDD5;
+  color: #9A3412;
+  box-shadow: inset 0 0 0 1px #F97316;
+}
+
+.document-threat-list .document-threat-pill.severity-low.is-active {
+  border-color: #60A5FA;
+  background: #DBEAFE;
+  color: #1E40AF;
+  box-shadow: inset 0 0 0 1px #3B82F6;
+}
+
+.document-dlp-mark.severity-high.is-selected {
+  background: rgba(254, 226, 226, 0.88);
+  color: #7F1D1D;
+  box-shadow: 0 0 0 1px #EF4444;
+}
+
+.document-dlp-mark.severity-medium.is-selected {
+  background: rgba(254, 215, 170, 0.94);
+  color: #7C2D12;
+  box-shadow: 0 0 0 1px #F97316;
+}
+
+.document-dlp-mark.severity-low.is-selected {
+  background: rgba(219, 234, 254, 0.92);
+  color: #1E3A8A;
+  box-shadow: 0 0 0 1px #3B82F6;
 }

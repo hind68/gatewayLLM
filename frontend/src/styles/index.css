@@ -14,3 +14,102 @@
 @import './feedback.css';
 @import './responsive.css';
 @import './admin.css';
+
+:root {
+  --scrollbar-thumb-soft: rgba(148, 163, 184, 0.34);
+  --scrollbar-thumb-soft-hover: rgba(148, 163, 184, 0.5);
+}
+
+.history,
+.messages,
+.search-results,
+.recent-section .history,
+.collapsed-panel .history.has-items,
+.composer textarea,
+.document-inspector-viewer,
+.document-original-code,
+.document-inspection-code,
+.document-secure-text,
+.code-block > div:last-child {
+  scrollbar-color: var(--scrollbar-thumb-soft) transparent;
+  scrollbar-width: thin;
+}
+
+.history::-webkit-scrollbar,
+.messages::-webkit-scrollbar,
+.search-results::-webkit-scrollbar,
+.recent-section .history::-webkit-scrollbar,
+.collapsed-panel .history.has-items::-webkit-scrollbar,
+.composer textarea::-webkit-scrollbar,
+.document-inspector-viewer::-webkit-scrollbar,
+.document-original-code::-webkit-scrollbar,
+.document-inspection-code::-webkit-scrollbar,
+.document-secure-text::-webkit-scrollbar,
+.code-block > div:last-child::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.history::-webkit-scrollbar-thumb,
+.messages::-webkit-scrollbar-thumb,
+.search-results::-webkit-scrollbar-thumb,
+.recent-section .history::-webkit-scrollbar-thumb,
+.collapsed-panel .history.has-items::-webkit-scrollbar-thumb,
+.composer textarea::-webkit-scrollbar-thumb,
+.document-inspector-viewer::-webkit-scrollbar-thumb,
+.document-original-code::-webkit-scrollbar-thumb,
+.document-inspection-code::-webkit-scrollbar-thumb,
+.document-secure-text::-webkit-scrollbar-thumb,
+.code-block > div:last-child::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--scrollbar-thumb-soft);
+}
+
+.history::-webkit-scrollbar-thumb:hover,
+.messages::-webkit-scrollbar-thumb:hover,
+.search-results::-webkit-scrollbar-thumb:hover,
+.recent-section .history::-webkit-scrollbar-thumb:hover,
+.collapsed-panel .history.has-items::-webkit-scrollbar-thumb:hover,
+.composer textarea::-webkit-scrollbar-thumb:hover,
+.document-inspector-viewer::-webkit-scrollbar-thumb:hover,
+.document-original-code::-webkit-scrollbar-thumb:hover,
+.document-inspection-code::-webkit-scrollbar-thumb:hover,
+.document-secure-text::-webkit-scrollbar-thumb:hover,
+.code-block > div:last-child::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-soft-hover);
+}
+
+.history::-webkit-scrollbar-track,
+.history::-webkit-scrollbar-button,
+.messages::-webkit-scrollbar-track,
+.messages::-webkit-scrollbar-button,
+.search-results::-webkit-scrollbar-track,
+.search-results::-webkit-scrollbar-button,
+.recent-section .history::-webkit-scrollbar-track,
+.recent-section .history::-webkit-scrollbar-button,
+.collapsed-panel .history.has-items::-webkit-scrollbar-track,
+.collapsed-panel .history.has-items::-webkit-scrollbar-button,
+.composer textarea::-webkit-scrollbar-track,
+.composer textarea::-webkit-scrollbar-button,
+.document-inspector-viewer::-webkit-scrollbar-track,
+.document-inspector-viewer::-webkit-scrollbar-button,
+.document-original-code::-webkit-scrollbar-track,
+.document-original-code::-webkit-scrollbar-button,
+.document-inspection-code::-webkit-scrollbar-track,
+.document-inspection-code::-webkit-scrollbar-button,
+.document-secure-text::-webkit-scrollbar-track,
+.document-secure-text::-webkit-scrollbar-button,
+.code-block > div:last-child::-webkit-scrollbar-track,
+.code-block > div:last-child::-webkit-scrollbar-button {
+  background: transparent;
+}
+
+.composer-attachments {
+  scrollbar-width: none;
+}
+
+.composer-attachments::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
