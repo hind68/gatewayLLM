@@ -1,0 +1,301 @@
+:root {
+  --synapse-navy: #243b6b;
+  --synapse-blue-soft: #edf3ff;
+  --synapse-ink: #171717;
+  --synapse-muted: #4b5563;
+  --synapse-border: rgba(31, 41, 55, .08);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body,
+body.login-pf {
+  min-height: 100vh;
+  background-color: #fff !important;
+  background-image:
+    radial-gradient(circle at 35% 50%, rgba(155, 214, 255, .28), transparent 34%),
+    radial-gradient(circle at 68% 50%, rgba(255, 202, 163, .28), transparent 32%),
+    linear-gradient(135deg, #fff 0%, #fbfdff 48%, #fffaf6 100%) !important;
+  color: var(--synapse-ink);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.login-pf-page {
+  display: flex;
+  min-height: 100vh;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+#kc-header,
+.login-pf-page > .card-pf {
+  width: min(100%, 430px);
+}
+
+#kc-header,
+#kc-header-wrapper {
+  color: var(--synapse-navy);
+}
+
+#kc-header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 0 22px;
+  font-size: 0;
+  font-weight: 650;
+  letter-spacing: -.04em;
+}
+
+#kc-header-wrapper::before {
+  display: block;
+  width: 42px;
+  height: 48px;
+  flex: 0 0 42px;
+  content: "";
+  background: url("../img/logo.png") center / contain no-repeat;
+}
+
+#kc-header-wrapper::after {
+  color: var(--synapse-navy);
+  content: "Synapse";
+  font-size: 24px;
+}
+
+.login-pf-page > .card-pf {
+  box-sizing: border-box;
+  max-width: 430px;
+  margin: 0 !important;
+  padding: 30px 32px 34px;
+  border: 1px solid var(--synapse-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 18px 55px rgba(36, 59, 107, .10);
+  backdrop-filter: blur(18px);
+}
+
+#kc-content,
+#kc-content-wrapper {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* The realm is French-only; keep utilities hidden even if Keycloak cached old realm data. */
+#kc-locale,
+#kc-locale-dropdown,
+.pf-v5-c-login__main-header-utilities {
+  display: none !important;
+}
+
+#kc-page-title,
+.pf-v5-c-login__main-header h1,
+.login-pf-header {
+  color: var(--synapse-navy);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -.03em;
+}
+
+#kc-page-title::after {
+  display: block;
+  margin-top: 8px;
+  color: var(--synapse-muted);
+  content: "Votre espace de travail sécurisé pour les modèles d’IA.";
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+label,
+.pf-v5-c-form__label {
+  color: #607089;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+label[for="username"],
+label[for="password"] {
+  display: block;
+  margin-bottom: 8px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
+.pf-v5-c-form-control {
+  min-height: 44px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .9);
+  color: var(--synapse-ink);
+  font-size: 14px;
+}
+
+input:focus,
+.pf-v5-c-form-control:focus {
+  border-color: #d1d5db !important;
+  box-shadow: 0 0 0 2px var(--synapse-blue-soft) !important;
+  outline: none;
+}
+
+/* Keep the password visibility button visually inside the password field. */
+.input-group:has(input[name="password"]),
+.pf-c-input-group:has(input[name="password"]),
+.pf-v5-c-input-group:has(input[name="password"]) {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .9);
+}
+
+.input-group:has(input[name="password"]):focus-within,
+.pf-c-input-group:has(input[name="password"]):focus-within,
+.pf-v5-c-input-group:has(input[name="password"]):focus-within {
+  box-shadow: 0 0 0 2px var(--synapse-blue-soft);
+}
+
+.input-group:has(input[name="password"]) input[name="password"],
+.pf-c-input-group:has(input[name="password"]) input[name="password"],
+.pf-v5-c-input-group:has(input[name="password"]) input[name="password"] {
+  width: 100%;
+  min-width: 0;
+  padding-right: 50px;
+  border: 0 !important;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.input-group:has(input[name="password"]) button,
+.pf-c-input-group:has(input[name="password"]) button,
+.pf-v5-c-input-group:has(input[name="password"]) button {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  z-index: 1;
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: #6b7280;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.input-group:has(input[name="password"]) button:hover,
+.pf-c-input-group:has(input[name="password"]) button:hover,
+.pf-v5-c-input-group:has(input[name="password"]) button:hover {
+  background: var(--synapse-blue-soft);
+  color: var(--synapse-navy);
+}
+
+.input-group:has(input[name="password"]) button:focus-visible,
+.pf-c-input-group:has(input[name="password"]) button:focus-visible,
+.pf-v5-c-input-group:has(input[name="password"]) button:focus-visible {
+  outline: 2px solid #c9d9f2;
+  outline-offset: 1px;
+}
+
+.input-group:has(input[name="password"]) button::after,
+.pf-c-input-group:has(input[name="password"]) button::after,
+.pf-v5-c-input-group:has(input[name="password"]) button::after {
+  content: none !important;
+  border: 0 !important;
+}
+
+#kc-login,
+.pf-v5-c-button.pf-m-primary,
+input[type="submit"] {
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--synapse-blue-soft);
+  box-shadow: 0 8px 18px rgba(36, 59, 107, .10);
+  color: var(--synapse-navy);
+  font-size: 13px;
+  font-weight: 750;
+  transition: transform .16s ease, background .16s ease;
+}
+
+#kc-login:hover,
+.pf-v5-c-button.pf-m-primary:hover,
+input[type="submit"]:hover {
+  background: #dfe9fb;
+  transform: translateY(-1px);
+}
+
+a,
+.pf-v5-c-button.pf-m-link {
+  color: var(--synapse-navy);
+  font-weight: 650;
+}
+
+input[aria-invalid="true"],
+.pf-v5-c-form-control[aria-invalid="true"],
+.pf-v5-c-form-control.pf-m-error {
+  border-color: #d98b86 !important;
+  background-color: #fffafa !important;
+  background-image: none !important;
+  box-shadow: 0 0 0 1px rgba(180, 85, 80, .12) !important;
+}
+
+#input-error {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a44f4a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.alert-error,
+.pf-v5-c-alert.pf-m-danger {
+  border-color: rgba(180, 85, 80, .22);
+  border-radius: 10px;
+  background: #fff2f0;
+  color: #a44f4a;
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .login-pf-page {
+    justify-content: flex-start;
+    padding: 24px 14px 36px;
+  }
+
+  .login-pf-page > .card-pf {
+    padding: 24px 20px 26px;
+  }
+
+  #kc-header-wrapper {
+    padding-bottom: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

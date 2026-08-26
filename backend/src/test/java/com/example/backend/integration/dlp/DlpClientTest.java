@@ -1,11 +1,13 @@
 package com.example.backend.integration.dlp;
 
+import com.example.backend.exceptions.DlpUnavailableException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,7 +47,7 @@ class DlpClientTest {
     void http500FailsClosed() {
         respond(500, "{\"error\":\"boom\"}");
 
-        assertThatThrownBy(() -> client.analyse("Mon email est client@example.com", "demo-user"))
+        assertThatThrownBy(() -> client.analyse("Mon email est client@example.com", "demo-user", List.of()))
                 .isInstanceOf(DlpUnavailableException.class);
     }
 
@@ -53,7 +55,7 @@ class DlpClientTest {
     void invalidJsonFailsClosed() {
         respond(200, "{not-json");
 
-        assertThatThrownBy(() -> client.analyse("Mon email est client@example.com", "demo-user"))
+        assertThatThrownBy(() -> client.analyse("Mon email est client@example.com", "demo-user", List.of()))
                 .isInstanceOf(DlpUnavailableException.class);
     }
 
@@ -71,7 +73,7 @@ class DlpClientTest {
                 }
                 """);
 
-        assertThatThrownBy(() -> client.analyse("Bonjour", "demo-user"))
+        assertThatThrownBy(() -> client.analyse("Bonjour", "demo-user", List.of()))
                 .isInstanceOf(DlpUnavailableException.class);
     }
 
@@ -92,7 +94,7 @@ class DlpClientTest {
                     """);
         });
 
-        assertThatThrownBy(() -> client.analyse("Bonjour", "demo-user"))
+        assertThatThrownBy(() -> client.analyse("Bonjour", "demo-user", List.of()))
                 .isInstanceOf(DlpUnavailableException.class);
     }
 

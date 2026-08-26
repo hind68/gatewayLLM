@@ -8,6 +8,7 @@ import ModelGallery from '../models/components/ModelGallery'
 import ModelSelector from '../models/components/ModelSelector'
 import ConversationMenu from '../conversations/components/ConversationMenu'
 import SearchModal from '../conversations/components/SearchModal'
+import AdminDashboard from '../admin/AdminDashboard'
 import Sidebar from './Sidebar'
 import { displayConversationTitle } from '../../utils/modelMetadata'
 
@@ -22,6 +23,7 @@ export default function AppLayout({
   models,
   conversations,
   feedback,
+  admin,
 }) {
   const { state, filters, editing, dialogs, actions, status } = conversations
   const activeConversation = state.activeConversation
@@ -29,6 +31,7 @@ export default function AppLayout({
   const [inspectedDocument, setInspectedDocument] = useState(null)
   const [isInspectorClosing, setIsInspectorClosing] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
+  const [adminSection, setAdminSection] = useState(() => window.localStorage.getItem('synapse-admin-section') || 'overview')
   const dragDepthRef = useRef(0)
   const resizeFrameRef = useRef(0)
   const closeInspectorTimerRef = useRef(0)
@@ -135,6 +138,7 @@ export default function AppLayout({
     <div className={`app-shell ${layout.isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
       <Sidebar
         activeConversation={activeConversation}
+        admin={admin ? { ...admin, adminSection, setAdminSection } : admin}
         archiveConversation={actions.archiveConversation}
         closeSidebarPanels={layout.closeSidebarPanels}
         closeTransientMenus={layout.closeTransientMenus}
@@ -193,7 +197,13 @@ export default function AppLayout({
 
       <div className="chat-workspace">
       <main
-        className={`chat-main ${chat.hasActiveMessages ? 'conversation-mode' : 'welcome-mode'} ${isDraggingFiles ? 'is-dragging-files' : ''}`}
+        className={`chat-main ${
+          admin?.showAdminDashboard
+            ? 'admin-main'
+            : chat.hasActiveMessages
+              ? 'conversation-mode'
+              : 'welcome-mode'
+        } ${isDraggingFiles ? 'is-dragging-files' : ''}`}
         style={{
           ...(chat.goBottomTop == null ? {} : { '--go-bottom-top': `${chat.goBottomTop}px` }),
           ...(chat.composerHeight == null ? {} : { '--composer-height': `${chat.composerHeight}px` }),
@@ -211,37 +221,50 @@ export default function AppLayout({
             </div>
           </div>
         )}
-        <header className="chat-header">
-          <div className="header-controls">
-            <ModelSelector
-              activeModel={models.activeModel}
-              disabled={status.isGenerating || models.isLoadingModels}
-              isOpen={layout.isModelMenuOpen}
-              models={models.models}
-              onSelect={actions.selectModel}
-              onToggle={() => {
-                layout.setIsAccountMenuOpen(false)
-                layout.setIsModelMenuOpen((current) => !current)
-              }}
-            />
-
-            {activeConversation && (
-              <ConversationMenu
-                id="header-conversation-menu"
-                isOpen={layout.isHeaderMenuOpen}
-                archiveLabel={activeConversation.status === 'ARCHIVEE' ? 'Désarchiver' : 'Archiver'}
-                onArchive={() => (activeConversation.status === 'ARCHIVEE' ? actions.restoreConversation(activeConversation) : actions.archiveConversation(activeConversation))}
-                onDelete={() => actions.deleteConversation(activeConversation)}
-                onOpen={() => {
+        {!admin?.showAdminDashboard && (
+          <header className="chat-header">
+            <div className="header-controls">
+              <ModelSelector
+                activeModel={models.activeModel}
+                disabled={status.isGenerating || models.isLoadingModels}
+                isOpen={layout.isModelMenuOpen}
+                models={models.models}
+                onSelect={actions.selectModel}
+                onToggle={() => {
                   layout.setIsAccountMenuOpen(false)
-                  layout.setIsHeaderMenuOpen((current) => !current)
+                  layout.setIsModelMenuOpen((current) => !current)
                 }}
-                onRename={() => actions.renameConversation(activeConversation)}
               />
-            )}
-          </div>
-        </header>
 
+              {activeConversation && (
+                <ConversationMenu
+                  id="header-conversation-menu"
+                  isOpen={layout.isHeaderMenuOpen}
+                  archiveLabel={activeConversation.status === 'ARCHIVEE' ? 'Désarchiver' : 'Archiver'}
+                  onArchive={() => (activeConversation.status === 'ARCHIVEE' ? actions.restoreConversation(activeConversation) : actions.archiveConversation(activeConversation))}
+                  onDelete={() => actions.deleteConversation(activeConversation)}
+                  onOpen={() => {
+                    layout.setIsAccountMenuOpen(false)
+                    layout.setIsHeaderMenuOpen((current) => !current)
+                  }}
+                  onRename={() => actions.renameConversation(activeConversation)}
+                />
+              )}
+            </div>
+          </header>
+        )}
+
+        {admin?.showAdminDashboard ? (
+          <AdminDashboard
+            activeSection={adminSection}
+            onSectionChange={setAdminSection}
+            onError={admin.onError}
+            onNotice={admin.onNotice}
+            onModelsChanged={admin.onModelsChanged}
+            onBackToChat={() => admin.setShowAdminDashboard(false)}
+          />
+        ) : (
+          <>
         {layout.isModelsView && (
           <ModelGallery
             disabled={status.isGenerating}
@@ -266,6 +289,7 @@ export default function AppLayout({
           messagesRef={chat.messagesRef}
           onCopy={chat.onCopy}
           onInspectDocument={openInspector}
+          onSendSecureMessage={actions.sendSecureMessage}
           onMessagesScroll={chat.onMessagesScroll}
           setCopiedKey={chat.setCopiedKey}
           welcomeComposer={!chat.hasActiveMessages ? (
@@ -310,28 +334,31 @@ export default function AppLayout({
             textareaRef={chat.textareaRef}
           />
         )}
+          </>
+        )}
 
         <Toast
-          chatError={feedback.chatError}
-          chatNotice={feedback.chatNotice}
-          onClose={feedback.onClearToast}
+          notifications={feedback.notifications}
+          onClose={feedback.onDismissNotification}
         />
       </main>
 
       {inspectedDocument && (
         <>
           <div
-            className="document-panel-resizer"
+            aria-hidden={admin?.showAdminDashboard || undefined}
+            className={`document-panel-resizer ${admin?.showAdminDashboard ? 'is-admin-hidden' : ''}`}
             role="separator"
             aria-orientation="vertical"
             aria-label="Redimensionner le panneau d'inspection"
-            tabIndex={0}
+            tabIndex={admin?.showAdminDashboard ? -1 : 0}
             onPointerDown={handleInspectorResizePointerDown}
           />
           <DocumentInspectorPanel
             attachment={inspectedDocument}
             closing={isInspectorClosing}
             conversationId={activeConversation?.id}
+            hidden={Boolean(admin?.showAdminDashboard)}
             onAttachSecure={attachSecureVersion}
             onClose={closeInspector}
             width={inspectorWidth}

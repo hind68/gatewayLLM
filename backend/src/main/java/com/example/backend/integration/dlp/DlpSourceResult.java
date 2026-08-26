@@ -13,5 +13,4 @@ public record DlpSourceResult(
         @JsonProperty("masked_text") String maskedText,
         List<DlpMatch> matches,
         List<DlpError> errors
-) {
-}
+) {}

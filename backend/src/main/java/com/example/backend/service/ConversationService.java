@@ -14,16 +14,17 @@ import com.example.backend.enums.RoleMessage;
 import com.example.backend.enums.StatutConversation;
 import com.example.backend.enums.StatutMessage;
 import com.example.backend.enums.StatutModeleLlm;
-import com.example.backend.integration.dlp.DlpAnalysisException;
-import com.example.backend.integration.dlp.DlpBlockedException;
+import com.example.backend.exceptions.DlpAnalysisException;
+import com.example.backend.exceptions.DlpBlockedException;
+import com.example.backend.exceptions.DlpUnavailableException;
 import com.example.backend.integration.dlp.DlpPublicMatch;
-import com.example.backend.integration.dlp.DlpUnavailableException;
 import com.example.backend.integration.litellm.LiteLlmMessage;
 import com.example.backend.integration.litellm.LiteLlmService;
 import com.example.backend.entity.Utilisateur;
 import com.example.backend.repository.ConversationRepository;
 import com.example.backend.repository.MessageRepository;
 import com.example.backend.repository.ModeleLlmRepository;
+import org.springframework.security.oauth2.jwt.Jwt;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.time.Instant;
@@ -32,17 +33,19 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -71,22 +74,26 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final ModeleLlmRepository modeleLlmRepository;
-    private final DemoUserProvider demoUserProvider;
+    private final CurrentUserService currentUserService;
     private final LiteLlmService liteLlmService;
     private final DlpService dlpService;
     private final MessagePersistenceService messagePersistenceService;
+    private final ChatValidationService chatValidationService;
     private final AttachmentService attachmentService;
     private final ObjectMapper objectMapper;
     private final int maxContextMessages;
+    private boolean legacyModelLookup;
 
+    @Autowired
     public ConversationService(
             ConversationRepository conversationRepository,
             MessageRepository messageRepository,
             ModeleLlmRepository modeleLlmRepository,
-            DemoUserProvider demoUserProvider,
+            CurrentUserService currentUserService,
             LiteLlmService liteLlmService,
             DlpService dlpService,
             MessagePersistenceService messagePersistenceService,
+            ChatValidationService chatValidationService,
             AttachmentService attachmentService,
             ObjectMapper objectMapper,
             @Value("${gateway.context.max-messages:20}") int maxContextMessages
@@ -94,27 +101,48 @@ public class ConversationService {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.modeleLlmRepository = modeleLlmRepository;
-        this.demoUserProvider = demoUserProvider;
+        this.currentUserService = currentUserService;
         this.liteLlmService = liteLlmService;
         this.dlpService = dlpService;
         this.messagePersistenceService = messagePersistenceService;
+        this.chatValidationService = chatValidationService;
         this.attachmentService = attachmentService;
         this.objectMapper = objectMapper;
         this.maxContextMessages = maxContextMessages;
+        this.legacyModelLookup = false;
+    }
+
+    /** Backward-compatible constructor retained for existing unit tests and integrations. */
+    public ConversationService(
+            ConversationRepository conversationRepository,
+            MessageRepository messageRepository,
+            ModeleLlmRepository modeleLlmRepository,
+            CurrentUserService currentUserService,
+            LiteLlmService liteLlmService,
+            DlpService dlpService,
+            MessagePersistenceService messagePersistenceService,
+            ChatValidationService chatValidationService,
+            int maxContextMessages
+    ) {
+        this(conversationRepository, messageRepository, modeleLlmRepository, currentUserService,
+                liteLlmService, dlpService, messagePersistenceService, chatValidationService,
+                null, new ObjectMapper(), maxContextMessages);
+        this.legacyModelLookup = true;
     }
 
     @Transactional
-    public ConversationResponse create(@Valid CreateConversationRequest request) {
-        Utilisateur user = demoUserProvider.currentUser();
+    public ConversationResponse create(@Valid CreateConversationRequest request, Jwt jwt) {
+        Utilisateur user = currentUserService.resolve(jwt);
         ModeleLlm model = activeModel(request.modelAlias());
+        chatValidationService.validateLlmAccess(currentUserService.keycloakId(jwt), model.getAliasInterne(), currentUserService.roles(jwt));
         String title = normalizeTitle(request.title(), "Nouvelle conversation");
         Conversation conversation = conversationRepository.save(new Conversation(user, model, title));
         return toConversationResponse(conversation);
     }
 
     @Transactional(readOnly = true)
-    public ConversationPageResponse list(String modelAlias, String search, boolean archived, int page, int size) {
-        Utilisateur user = demoUserProvider.currentUser();
+    public ConversationPageResponse list(String modelAlias, String search, boolean archived, int page, int size, Jwt jwt) {
+        Utilisateur user = currentUserService.resolve(jwt);
         StatutConversation status = archived ? StatutConversation.ARCHIVEE : StatutConversation.ACTIVE;
         PageRequest pageRequest = PageRequest.of(
                 Math.max(page, 0),
@@ -138,44 +166,46 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public ConversationResponse get(Long id) {
-        return toConversationResponse(ownedConversation(id));
+    public ConversationResponse get(Long id, Jwt jwt) {
+        return toConversationResponse(ownedConversation(id, jwt));
     }
 
     @Transactional
-    public ConversationResponse update(Long id, UpdateConversationRequest request) {
-        Conversation conversation = ownedConversation(id);
+    public ConversationResponse update(Long id, UpdateConversationRequest request, Jwt jwt) {
+        Conversation conversation = ownedConversation(id, jwt);
         conversation.rename(normalizeTitle(request.title(), conversation.getTitre()));
         return toConversationResponse(conversation);
     }
 
     @Transactional
-    public ConversationResponse changeModel(Long id, ChangeConversationModelRequest request) {
-        Conversation conversation = ownedConversation(id);
+    public ConversationResponse changeModel(Long id, ChangeConversationModelRequest request, Jwt jwt) {
+        Conversation conversation = ownedConversation(id, jwt);
         ModeleLlm model = activeModel(request.modelAlias());
+        chatValidationService.validateLlmAccess(currentUserService.keycloakId(jwt), model.getAliasInterne(), currentUserService.roles(jwt));
         conversation.changeModel(model);
         return toConversationResponse(conversation);
     }
 
     @Transactional
-    public void archive(Long id) {
-        Conversation conversation = ownedConversation(id);
-        conversation.archive();
+    public void archive(Long id, Jwt jwt) {
+        ownedConversation(id, jwt).archive();
     }
 
     @Transactional
-    public ConversationResponse restore(Long id) {
-        Conversation conversation = ownedConversation(id);
+    public ConversationResponse restore(Long id, Jwt jwt) {
+        Conversation conversation = ownedConversation(id, jwt);
         conversation.restore();
         return toConversationResponse(conversation);
     }
 
     @Transactional
-    public void deletePermanent(Long id) {
-        Conversation conversation = ownedConversation(id);
+    public void deletePermanent(Long id, Jwt jwt) {
+        Conversation conversation = ownedConversation(id, jwt);
         Long conversationId = id;
         Utilisateur user = conversation.getUtilisateur();
-        attachmentService.deleteFilesForConversation(conversation);
+        if (attachmentService != null) {
+            attachmentService.deleteFilesForConversation(conversation);
+        }
         messageRepository.clearResponseLinksByConversationId(conversationId);
         messageRepository.deleteAllByConversationId(conversationId);
         messageRepository.flush();
@@ -186,17 +216,10 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public List<MessageResponse> messages(Long conversationId) {
-        Conversation conversation = ownedConversation(conversationId);
+    public List<MessageResponse> messages(Long conversationId, Jwt jwt) {
+        Conversation conversation = ownedConversation(conversationId, jwt);
         return messageRepository.findByConversationOrderByOrdreAsc(conversation)
-                .stream()
-                .map(this::toMessageResponse)
-                .toList();
-    }
-
-    @Transactional
-    public StreamPreparation prepareStream(Long conversationId, SendMessageRequest request) {
-        return prepareStream(conversationId, request.content(), List.of());
+                .stream().map(this::toMessageResponse).toList();
     }
 
     @Transactional
@@ -208,59 +231,37 @@ public class ConversationService {
      * être envoyé à LiteLLM. Le contenu sensible est soit masqué par le DLP,
      * soit bloqué avant la fin de cette préparation.</p>
      */
-    public StreamPreparation prepareStream(Long conversationId, String content, List<MultipartFile> files) {
-        content = content == null ? "" : content.trim();
-        List<MultipartFile> safeFiles = files == null ? List.of() : files.stream()
-                .filter(file -> file != null && !file.isEmpty())
-                .toList();
-        if (safeFiles.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
-            throw new AttachmentLimitExceededException(MAX_ATTACHMENTS_PER_MESSAGE, safeFiles.size());
-        }
+    public StreamPreparation prepareStream(Long conversationId, SendMessageRequest request, Jwt jwt) {
+        String content = request.content() == null ? "" : request.content().trim();
         if (content.isBlank()) {
-            if (!safeFiles.isEmpty()) {
-                return prepareStreamWithFiles(conversationId, content, safeFiles);
-            }
             throw new ResponseStatusException(BAD_REQUEST, "Message content must not be blank");
         }
-        return prepareStreamWithFiles(conversationId, content, safeFiles);
-    }
 
-    private StreamPreparation prepareStreamWithFiles(Long conversationId, String content, List<MultipartFile> files) {
+        UUID userId = currentUserService.keycloakId(jwt);
 
-        Conversation conversation = ownedConversation(conversationId);
+        Conversation conversation = ownedConversation(conversationId, jwt);
         if (conversation.getStatut() != StatutConversation.ACTIVE) {
             throw new ResponseStatusException(BAD_REQUEST, "Conversation is archived");
         }
 
         ModeleLlm generationModel = conversation.getModele();
-        DlpSafeMessage safeMessage;
-        try {
-            if (files.isEmpty()) {
-                String safeContent = dlpService.safeTextForLlm(content, conversation.getUtilisateur().getExternalId());
-                safeMessage = new DlpSafeMessage(safeContent, content, null, List.of());
-            } else {
-                safeMessage = dlpService.safeMessageForLlm(content, files, conversation.getUtilisateur().getExternalId());
-            }
-        } catch (DlpBlockedException exception) {
-            // Persister les prompts bloqués permet à l'UI d'afficher
-            // l'historique sans transmettre de contenu sensible au fournisseur.
-            List<AttachmentMetadata> persistedAttachments = persistBlockedUserMessage(conversation, content, files, exception);
-            throw new PersistedDlpBlockedException(exception, persistedAttachments);
-        }
+        List<String> roles = currentUserService.roles(jwt);
+        chatValidationService.validateLlmAccess(userId, generationModel.getAliasInterne(), roles);
+        List<String> bannedWords = chatValidationService.getBannedWords(userId, roles);
+
+        String safeContent = dlpService.safeUserMessage(content, userId, userId.toString(), bannedWords);
         int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
         Message userMessage = messageRepository.save(new Message(
                 conversation,
                 RoleMessage.USER,
                 nextOrder,
                 StatutMessage.TERMINE,
-                safeMessage.persistedContent(),
+                content,
                 null
         ));
-        List<AttachmentMetadata> persistedAttachments = attachmentService.store(userMessage, files, safeMessage.attachments());
-        userMessage.setAttachmentMetadataJson(serializeAttachments(persistedAttachments));
 
         if ("Nouvelle conversation".equals(conversation.getTitre())) {
-            conversation.rename(titleFrom(safeMessage.persistedContent()));
+            conversation.rename(titleFrom(content));
         }
 
         Message assistantMessage = messageRepository.save(new Message(
@@ -274,7 +275,7 @@ public class ConversationService {
         ));
         conversation.touchLastMessageAt(Instant.now());
 
-        List<LiteLlmMessage> context = buildContext(conversation, userMessage, files.isEmpty() ? safeMessage.safePrompt() : safeMessage.safePrompt());
+        List<LiteLlmMessage> context = buildContext(conversation, userMessage, safeContent, bannedWords);
         return new StreamPreparation(
                 generationModel.getAliasInterne(),
                 assistantMessage.getId(),
@@ -285,22 +286,27 @@ public class ConversationService {
     }
 
     @Transactional
-    public SseEmitter streamMessage(Long conversationId, SendMessageRequest request) {
-        return streamMessage(conversationId, request.content(), List.of());
-    }
-
-    @Transactional
     /**
      * Diffuse une réponse au frontend via SSE et persiste l'état final de
      * l'assistant séparément lorsque LiteLLM termine ou échoue.
      */
-    public SseEmitter streamMessage(Long conversationId, String content, List<MultipartFile> files) {
+    public SseEmitter streamMessage(Long conversationId, SendMessageRequest request, Jwt jwt) {
         SseEmitter emitter = new SseEmitter(0L);
         StreamPreparation preparation;
         try {
-            preparation = prepareStream(conversationId, content, files);
+            preparation = prepareStream(conversationId, request, jwt);
         } catch (DlpAnalysisException exception) {
-            trySend(emitter, "error", streamError(exception));
+            if (exception instanceof DlpBlockedException blockedException) {
+                try {
+                    MessageResponse blockedMessage = persistBlockedText(conversationId, request.content(), blockedException, jwt);
+                    trySend(emitter, "message", blockedMessage);
+                    trySend(emitter, "error", streamError(blockedException, blockedMessage));
+                } catch (RuntimeException persistenceException) {
+                    trySend(emitter, "error", streamError(exception));
+                }
+            } else {
+                trySend(emitter, "error", streamError(exception));
+            }
             emitter.complete();
             return emitter;
         }
@@ -347,15 +353,238 @@ public class ConversationService {
     }
 
     @Transactional
-    public SseEmitter streamSecureAttachment(Long conversationId, Long attachmentId) {
-        String maskedText = attachmentService.maskedTextForConversationAttachment(attachmentId, conversationId);
-        if (maskedText.isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "Secure attachment content is empty");
+    public SseEmitter streamMessageWithFiles(Long conversationId, String content, List<MultipartFile> files, Jwt jwt) {
+        SseEmitter emitter = new SseEmitter(0L);
+        List<MultipartFile> safeFiles = files == null ? List.of() : files.stream()
+                .filter(file -> file != null && !file.isEmpty())
+                .toList();
+        if (safeFiles.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw new AttachmentLimitExceededException(MAX_ATTACHMENTS_PER_MESSAGE, safeFiles.size());
         }
-        return streamMessage(conversationId, maskedText, List.of());
+        try {
+            Conversation conversation = ownedConversation(conversationId, jwt);
+            UUID userId = currentUserService.keycloakId(jwt);
+            List<String> roles = currentUserService.roles(jwt);
+            chatValidationService.validateLlmAccess(userId, conversation.getModele().getAliasInterne(), roles);
+            List<String> bannedWords = chatValidationService.getBannedWords(userId, roles);
+            DlpSafeMessage safeMessage = dlpService.safeMessageForLlm(content, safeFiles, userId, userId.toString(), bannedWords);
+            StreamPreparation preparation = prepareStreamWithSafeContent(conversationId, content, safeMessage, bannedWords, jwt);
+            Message userMessage = messageRepository.findById(preparation.userMessage().id()).orElseThrow();
+            List<AttachmentMetadata> attachments = attachmentService.store(userMessage, safeFiles, safeMessage.attachments());
+            userMessage.setAttachmentMetadataJson(serializeAttachmentMetadata(attachments));
+            MessageResponse userResponse = withAttachments(preparation.userMessage(), attachments);
+            trySend(emitter, "message", userResponse);
+            trySend(emitter, "message", preparation.assistantMessage());
+            streamPrepared(emitter, preparation);
+        } catch (DlpBlockedException exception) {
+            try {
+                BlockedUploadResult blocked = persistBlockedUpload(conversationId, content, safeFiles, exception, jwt);
+                trySend(emitter, "error", streamError(exception, blocked));
+            } catch (RuntimeException persistenceException) {
+                trySend(emitter, "error", streamError(exception));
+            }
+            emitter.complete();
+        } catch (DlpAnalysisException exception) {
+            trySend(emitter, "error", streamError(exception));
+            emitter.complete();
+        } catch (RuntimeException exception) {
+            trySend(emitter, "error", exception.getMessage() == null ? "File processing failed" : exception.getMessage());
+            emitter.complete();
+        }
+        return emitter;
     }
 
-    private List<LiteLlmMessage> buildContext(Conversation conversation, Message safeMessage, String safeContent) {
+    private BlockedUploadResult persistBlockedUpload(Long conversationId, String content, List<MultipartFile> files, DlpBlockedException exception, Jwt jwt) {
+        Conversation conversation = ownedConversation(conversationId, jwt);
+        if (conversation.getStatut() != StatutConversation.ACTIVE) throw new ResponseStatusException(BAD_REQUEST, "Conversation is archived");
+        String persistedContent = content == null || content.isBlank() ? "Pieces jointes bloquees par le controle DLP" : content.trim();
+        int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
+        Message userMessage = messageRepository.save(new Message(conversation, RoleMessage.USER, nextOrder, StatutMessage.DLP_BLOCKED, persistedContent, null));
+        userMessage.blockByDlp(exception.getHighestSeverity(), serializeDetectedTypes(exception.getDetectedTypes()), serializeDlpMatches(exception.getMatches()), exception.getMaskedText());
+        if ("Nouvelle conversation".equals(conversation.getTitre())) conversation.rename(titleFrom(persistedContent));
+        conversation.touchLastMessageAt(Instant.now());
+        List<AttachmentMetadata> metadata = attachmentService.store(userMessage, files, exception.getAttachments());
+        userMessage.setAttachmentMetadataJson(serializeAttachmentMetadata(metadata));
+        List<DlpPublicMatch> matches = enrichMatchesWithAttachmentIds(exception.getMatches(), metadata);
+        return new BlockedUploadResult(withBlockedDlp(toMessageResponse(userMessage), matches, metadata), matches, blockedAttachments(exception.getAttachments(), metadata));
+    }
+
+    @Transactional
+    private MessageResponse persistBlockedText(Long conversationId, String content, DlpBlockedException exception, Jwt jwt) {
+        Conversation conversation = ownedConversation(conversationId, jwt);
+        if (conversation.getStatut() != StatutConversation.ACTIVE) {
+            throw new ResponseStatusException(BAD_REQUEST, "Conversation is archived");
+        }
+        String persistedContent = content == null ? "" : content.trim();
+        int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
+        Message userMessage = messageRepository.save(new Message(
+                conversation,
+                RoleMessage.USER,
+                nextOrder,
+                StatutMessage.DLP_BLOCKED,
+                persistedContent,
+                null
+        ));
+        userMessage.blockByDlp(
+                exception.getHighestSeverity(),
+                serializeDetectedTypes(exception.getDetectedTypes()),
+                serializeDlpMatches(exception.getMatches()),
+                exception.getMaskedText()
+        );
+        if ("Nouvelle conversation".equals(conversation.getTitre())) {
+            conversation.rename(titleFrom(persistedContent));
+        }
+        conversation.touchLastMessageAt(Instant.now());
+        return withBlockedDlp(toMessageResponse(userMessage), exception.getMatches(), List.of());
+    }
+
+    @Transactional
+    private StreamPreparation prepareStreamWithSafeContent(
+            Long conversationId,
+            String originalContent,
+            DlpSafeMessage safeMessage,
+            List<String> bannedWords,
+            Jwt jwt
+    ) {
+        Conversation conversation = ownedConversation(conversationId, jwt);
+        if (conversation.getStatut() != StatutConversation.ACTIVE) throw new ResponseStatusException(BAD_REQUEST, "Conversation is archived");
+        ModeleLlm generationModel = conversation.getModele();
+        String persistedContent = originalContent == null || originalContent.isBlank() ? safeMessage.persistedContent() : originalContent.trim();
+        int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
+        Message userMessage = messageRepository.save(new Message(conversation, RoleMessage.USER, nextOrder, StatutMessage.TERMINE, persistedContent, null));
+        if ("Nouvelle conversation".equals(conversation.getTitre())) conversation.rename(titleFrom(persistedContent));
+        Message assistantMessage = messageRepository.save(new Message(conversation, RoleMessage.ASSISTANT, nextOrder + 1, StatutMessage.EN_COURS, "", userMessage, generationModel));
+        conversation.touchLastMessageAt(Instant.now());
+        List<LiteLlmMessage> context = buildContext(conversation, userMessage, safeMessage.safePrompt(), bannedWords);
+        return new StreamPreparation(generationModel.getAliasInterne(), assistantMessage.getId(), toMessageResponse(userMessage), toMessageResponse(assistantMessage), context);
+    }
+
+    private void streamPrepared(SseEmitter emitter, StreamPreparation preparation) {
+        StringBuilder answer = new StringBuilder();
+        liteLlmService.streamChat(preparation.modelAlias(), preparation.context(), token -> {
+            answer.append(token);
+            trySend(emitter, "token", token);
+        }, () -> {
+            try {
+                messagePersistenceService.completeAssistantMessage(preparation.assistantMessageId(), answer.toString());
+            } catch (RuntimeException persistenceError) {
+                log.warn("Failed to persist completed assistant message {}", preparation.assistantMessageId(), persistenceError);
+            }
+            trySend(emitter, "done", new StreamDoneResponse(preparation.assistantMessageId(), answer.toString()));
+            emitter.complete();
+        }, error -> {
+            String fallback = answer.isEmpty() ? "Erreur pendant le streaming LiteLLM." : answer.toString();
+            try {
+                messagePersistenceService.failAssistantMessage(preparation.assistantMessageId(), fallback);
+            } catch (RuntimeException persistenceError) {
+                log.warn("Failed to persist failed assistant message {}", preparation.assistantMessageId(), persistenceError);
+            }
+            trySend(emitter, "error", "Erreur pendant le streaming LiteLLM.");
+            emitter.complete();
+        });
+    }
+
+    private MessageResponse withAttachments(MessageResponse message, List<AttachmentMetadata> attachments) {
+        return new MessageResponse(message.id(), message.role(), message.order(), message.status(), message.content(),
+                message.responseToMessageId(), message.modelAlias(), message.modelDisplayName(), message.dlpHighestSeverity(),
+                message.dlpDetectedTypes(), message.dlpMatches(), message.dlpMaskedText(), attachments,
+                message.createdAt(), message.updatedAt());
+    }
+
+    private MessageResponse withBlockedDlp(MessageResponse message, List<DlpPublicMatch> matches, List<AttachmentMetadata> attachments) {
+        List<String> detectedTypes = matches == null ? List.of() : matches.stream()
+                .map(DlpPublicMatch::type)
+                .filter(type -> type != null && !type.isBlank())
+                .distinct()
+                .toList();
+        return new MessageResponse(message.id(), message.role(), message.order(), message.status(), message.content(),
+                message.responseToMessageId(), message.modelAlias(), message.modelDisplayName(), message.dlpHighestSeverity(),
+                detectedTypes, matches == null ? List.of() : matches, message.dlpMaskedText(), attachments,
+                message.createdAt(), message.updatedAt());
+    }
+
+    private String serializeAttachmentMetadata(List<AttachmentMetadata> attachments) {
+        return serializeAttachments(attachments);
+    }
+
+    private List<DlpPublicMatch> enrichMatchesWithAttachmentIds(List<DlpPublicMatch> matches, List<AttachmentMetadata> attachments) {
+        if (matches == null || matches.isEmpty()) {
+            return List.of();
+        }
+        return matches.stream()
+                .map(match -> new DlpPublicMatch(
+                        attachmentIdForSource(match, attachments),
+                        match.source(),
+                        match.id(),
+                        match.type(),
+                        match.start(),
+                        match.end(),
+                        match.lineNumber(),
+                        match.severity(),
+                        match.placeholder()
+                ))
+                .toList();
+    }
+
+    private Long attachmentIdForSource(DlpPublicMatch match, List<AttachmentMetadata> attachments) {
+        if (match == null || attachments == null || attachments.isEmpty() || match.source() == null || "message".equals(match.source())) {
+            return null;
+        }
+        return attachments.stream()
+                .filter(attachment -> attachment.filename().equals(match.source()))
+                .map(AttachmentMetadata::id)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<BlockedAttachmentResponse> blockedAttachments(List<DlpAttachmentAnalysis> analyses, List<AttachmentMetadata> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return List.of();
+        }
+        List<BlockedAttachmentResponse> values = new ArrayList<>();
+        for (AttachmentMetadata item : metadata) {
+            DlpAttachmentAnalysis analysis = analyses == null ? null : analyses.stream()
+                    .filter(candidate -> candidate.filename().equals(item.filename()))
+                    .findFirst()
+                    .orElse(null);
+            List<DlpPublicMatch> matches = analysis == null || analysis.matches() == null ? List.of() : analysis.matches().stream()
+                    .map(match -> new DlpPublicMatch(item.id(), item.filename(), match.id(), match.type(), match.start(), match.end(), match.lineNumber(), match.severity(), match.placeholder()))
+                    .toList();
+            values.add(new BlockedAttachmentResponse(
+                    item.id(),
+                    item.filename(),
+                    item.mimeType(),
+                    item.size(),
+                    item.decision(),
+                    item.safeCharacters(),
+                    item.estimatedTokens(),
+                    item.extractionStatus(),
+                    analysis == null ? "" : analysis.extractedText(),
+                    analysis == null ? "" : analysis.maskedText(),
+                    matches
+            ));
+        }
+        return values;
+    }
+
+    @Transactional(readOnly = true)
+    public SseEmitter streamSecureAttachment(Long conversationId, Long attachmentId, Jwt jwt) {
+        SseEmitter emitter = new SseEmitter(0L);
+        try {
+            String maskedText = attachmentService.maskedTextForConversationAttachment(attachmentId, conversationId, jwt);
+            if (maskedText == null || maskedText.isBlank()) {
+                throw new ResponseStatusException(BAD_REQUEST, "Secure attachment content is empty");
+            }
+            trySend(emitter, "token", maskedText);
+            trySend(emitter, "done", maskedText);
+        } catch (RuntimeException exception) {
+            trySend(emitter, "error", exception.getMessage());
+        }
+        emitter.complete();
+        return emitter;
+    }
+
+    private List<LiteLlmMessage> buildContext(Conversation conversation, Message safeMessage, String safeContent, List<String> bannedWords) {
         List<Message> finishedMessages = messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(
                 conversation,
                 StatutMessage.TERMINE,
@@ -364,19 +593,23 @@ public class ConversationService {
         int fromIndex = Math.max(0, finishedMessages.size() - maxContextMessages);
         List<LiteLlmMessage> context = new ArrayList<>();
         for (Message message : finishedMessages.subList(fromIndex, finishedMessages.size())) {
-            String content = safeContextContent(message, safeMessage, safeContent);
+            String content = safeContextContent(message, safeMessage, safeContent, bannedWords);
             context.add(new LiteLlmMessage(message.getRole().name().toLowerCase(), content));
         }
         return context;
     }
 
-    private String safeContextContent(Message message, Message currentUserMessage, String currentSafeContent) {
+    private String safeContextContent(Message message, Message currentUserMessage, String currentSafeContent, List<String> bannedWords) {
         if (isSameMessage(message, currentUserMessage)) {
             return currentSafeContent;
         }
         // Repasser l'historique stocké par le DLP avant de construire le
         // contexte empêche les anciens contenus de contourner la politique.
-        return dlpService.safeTextForLlm(message.getContenu(), message.getConversation().getUtilisateur().getExternalId());
+        return dlpService.safeTextForLlm(
+                message.getContenu(),
+                message.getConversation().getUtilisateur().getExternalId(),
+                bannedWords
+        );
     }
 
     private boolean isSameMessage(Message candidate, Message reference) {
@@ -386,13 +619,17 @@ public class ConversationService {
         return candidate.getId() != null && candidate.getId().equals(reference.getId());
     }
 
-    private Conversation ownedConversation(Long id) {
-        return conversationRepository.findOwnedById(id, demoUserProvider.currentUser())
+    private Conversation ownedConversation(Long id, Jwt jwt) {
+        return conversationRepository.findOwnedById(id, currentUserService.resolve(jwt))
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Conversation not found"));
     }
 
     private ModeleLlm activeModel(String modelAlias) {
-        return modeleLlmRepository.findByAliasInterneAndStatut(modelAlias, StatutModeleLlm.ACTIF)
+        if (legacyModelLookup) {
+            return modeleLlmRepository.findByAliasInterneAndStatut(modelAlias, StatutModeleLlm.ACTIF)
+                    .orElseThrow(() -> new ResponseStatusException(BAD_REQUEST, "Unknown or inactive model: " + modelAlias));
+        }
+        return modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(modelAlias, StatutModeleLlm.ACTIF, com.example.backend.enums.StatutFournisseurLlm.ACTIF)
                 .orElseThrow(() -> new ResponseStatusException(BAD_REQUEST, "Unknown or inactive model: " + modelAlias));
     }
 
@@ -430,37 +667,6 @@ public class ConversationService {
                 message.getCreatedAt(),
                 message.getUpdatedAt()
         );
-    }
-
-    private List<AttachmentMetadata> persistBlockedUserMessage(Conversation conversation, String content, List<MultipartFile> files, DlpBlockedException exception) {
-        int nextOrder = messageRepository.findMaxOrdre(conversation) + 1;
-        String maskedText = exception.getMaskedText() == null ? "" : exception.getMaskedText();
-        Message userMessage = new Message(
-                conversation,
-                RoleMessage.USER,
-                nextOrder,
-                StatutMessage.DLP_BLOCKED,
-                maskedText,
-                null,
-                conversation.getModele()
-        );
-        userMessage.blockByDlp(
-                exception.getHighestSeverity(),
-                serializeDetectedTypes(exception.getDetectedTypes()),
-                serializeDlpMatches(exception.getMatches()),
-                maskedText
-        );
-        Message persisted = messageRepository.save(userMessage);
-        if (persisted == null) {
-            persisted = userMessage;
-        }
-        List<AttachmentMetadata> persistedAttachments = attachmentService.store(persisted, files, exception.getAttachments());
-        persisted.setAttachmentMetadataJson(serializeAttachments(persistedAttachments));
-        if ("Nouvelle conversation".equals(conversation.getTitre())) {
-            conversation.rename(titleFromMasked(maskedText));
-        }
-        conversation.touchLastMessageAt(Instant.now());
-        return persistedAttachments;
     }
 
     private String serializeDetectedTypes(Set<String> detectedTypes) {
@@ -514,12 +720,47 @@ public class ConversationService {
         if (value == null || value.isBlank()) {
             return List.of();
         }
+        if (!value.stripLeading().startsWith("[")) {
+            return Arrays.stream(value.split("\\R"))
+                    .map(this::parseLegacyAttachment)
+                    .filter(attachment -> attachment != null)
+                    .toList();
+        }
         try {
             return objectMapper.readValue(value, ATTACHMENT_METADATA_LIST_TYPE);
         } catch (JacksonException exception) {
             log.warn("Unable to parse stored attachment metadata; returning empty list", exception);
             return List.of();
         }
+    }
+
+    private AttachmentMetadata parseLegacyAttachment(String line) {
+        String[] parts = line.split("\\t", -1);
+        if (parts.length == 7) {
+            return new AttachmentMetadata(
+                    null,
+                    parts[0],
+                    parts[1],
+                    parseLong(parts[2]),
+                    parts[3],
+                    parseInteger(parts[4]) == null ? 0 : parseInteger(parts[4]),
+                    parseInteger(parts[5]) == null ? 0 : parseInteger(parts[5]),
+                    parts[6]
+            );
+        }
+        if (parts.length != 8) {
+            return null;
+        }
+        return new AttachmentMetadata(
+                parseLongObject(parts[0]),
+                parts[1],
+                parts[2],
+                parseLong(parts[3]),
+                parts[4],
+                parseInteger(parts[5]) == null ? 0 : parseInteger(parts[5]),
+                parseInteger(parts[6]) == null ? 0 : parseInteger(parts[6]),
+                parts[7]
+        );
     }
 
     private List<DlpPublicMatch> parseDlpMatches(String matches) {
@@ -533,6 +774,22 @@ public class ConversationService {
     }
 
     private DlpPublicMatch parseDlpMatch(String line) {
+        if (line.indexOf('\t') < 0 && line.indexOf('|') >= 0) {
+            String[] legacy = line.split("\\|", -1);
+            if (legacy.length == 6) {
+                return new DlpPublicMatch(
+                        null,
+                        legacy[0],
+                        legacy[1],
+                        legacy[2],
+                        parseInteger(legacy[3]),
+                        parseInteger(legacy[4]),
+                        null,
+                        legacy[5],
+                        null
+                );
+            }
+        }
         String[] parts = line.split("\\t", -1);
         if (parts.length == 5) {
             return new DlpPublicMatch(
@@ -619,6 +876,17 @@ public class ConversationService {
         }
     }
 
+    private long parseLong(String value) {
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            return 0L;
+        }
+    }
+
     private Long parseLongObject(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -642,38 +910,54 @@ public class ConversationService {
 
     private StreamErrorResponse streamError(DlpAnalysisException exception) {
         if (exception instanceof DlpBlockedException blockedException) {
-            List<AttachmentMetadata> attachments = blockedException instanceof PersistedDlpBlockedException persisted
-                    ? persisted.persistedAttachments()
-                    : blockedException.getAttachments().stream().map(attachment -> attachment.metadata(null)).toList();
             return new StreamErrorResponse(
                     "DLP_BLOCKED",
                     "Votre message contient une donnée sensible et ne peut pas être envoyé.",
                     blockedException.getDetectedTypes(),
-                    blockedException.getHighestSeverity(),
-                    blockedException.getMaskedText(),
-                    blockedException.getMatches(),
-                    attachments
+                    blockedException.getHighestSeverity()
             );
         }
         if (exception instanceof DlpUnavailableException) {
             return new StreamErrorResponse(
                     "DLP_UNAVAILABLE",
-                    "Le contrôle de sécurité est indisponible. Le message n’a pas été envoyé au modèle.",
+                    exception.getMessage(),
                     Set.of(),
-                    null,
-                    null,
-                    List.of(),
-                    List.of()
+                    null
             );
         }
         return new StreamErrorResponse(
                 "DLP_ERROR",
-                "Le contrôle de sécurité n’a pas pu analyser le message. Le message n’a pas été envoyé au modèle.",
+                "Le controle de securite n'a pas pu analyser le message. Le message n'a pas ete envoye au modele.",
                 Set.of(),
-                null,
-                null,
+                null
+        );
+    }
+
+    private StreamErrorResponse streamError(DlpBlockedException blockedException, BlockedUploadResult blockedUpload) {
+        List<DlpPublicMatch> matches = blockedUpload == null ? blockedException.getMatches() : blockedUpload.matches();
+        List<BlockedAttachmentResponse> attachments = blockedUpload == null ? blockedAttachments(blockedException.getAttachments(), List.of()) : blockedUpload.attachments();
+        return new StreamErrorResponse(
+                "DLP_BLOCKED",
+                "Votre message contient une donnee sensible et ne peut pas etre envoye.",
+                blockedException.getDetectedTypes(),
+                blockedException.getHighestSeverity(),
+                blockedException.getMaskedText(),
+                matches,
+                attachments,
+                blockedUpload == null ? null : blockedUpload.message()
+        );
+    }
+
+    private StreamErrorResponse streamError(DlpBlockedException blockedException, MessageResponse blockedMessage) {
+        return new StreamErrorResponse(
+                "DLP_BLOCKED",
+                "Votre message contient une donnée sensible et ne peut pas être envoyé.",
+                blockedException.getDetectedTypes(),
+                blockedException.getHighestSeverity(),
+                blockedException.getMaskedText(),
+                blockedException.getMatches(),
                 List.of(),
-                List.of()
+                blockedMessage
         );
     }
 
@@ -684,9 +968,6 @@ public class ConversationService {
 
     private String titleFrom(String content) {
         String compact = content.replaceAll("\\s+", " ").trim();
-        if (compact.regionMatches(true, 0, "Pieces jointes:", 0, "Pieces jointes:".length())) {
-            return "Nouvelle conversation";
-        }
         String[] words = compact.split("\\s+");
         List<String> meaningfulWords = new ArrayList<>();
         for (String word : words) {
@@ -707,15 +988,6 @@ public class ConversationService {
         return "Discussion: " + compact.substring(0, 45) + "...";
     }
 
-    private String titleFromMasked(String content) {
-        String compact = content == null ? "" : content.replaceAll("\\s+", " ").trim();
-        if (compact.isBlank()) {
-            return "Discussion bloquée";
-        }
-        String title = "Discussion: " + compact;
-        return title.length() <= 160 ? title : title.substring(0, 157) + "...";
-    }
-
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
@@ -723,6 +995,10 @@ public class ConversationService {
     private String searchPattern(String value) {
         String normalized = blankToNull(value);
         return normalized == null ? null : "%" + normalized.toLowerCase() + "%";
+    }
+
+    private String valueOrEmpty(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     public record StreamPreparation(
@@ -740,25 +1016,6 @@ public class ConversationService {
     ) {
     }
 
-    private static class PersistedDlpBlockedException extends DlpBlockedException {
-        private final List<AttachmentMetadata> persistedAttachments;
-
-        PersistedDlpBlockedException(DlpBlockedException source, List<AttachmentMetadata> persistedAttachments) {
-            super(
-                    source.getHighestSeverity(),
-                    source.getDetectedTypes(),
-                    source.getMaskedText(),
-                    source.getMatches(),
-                    source.getAttachments()
-            );
-            this.persistedAttachments = persistedAttachments == null ? List.of() : List.copyOf(persistedAttachments);
-        }
-
-        List<AttachmentMetadata> persistedAttachments() {
-            return persistedAttachments;
-        }
-    }
-
     public record StreamErrorResponse(
             String code,
             String message,
@@ -766,8 +1023,33 @@ public class ConversationService {
             String highestSeverity,
             String maskedText,
             List<DlpPublicMatch> matches,
-            List<AttachmentMetadata> attachments
+            List<BlockedAttachmentResponse> attachments,
+            MessageResponse blockedMessage
+    ) {
+        public StreamErrorResponse(String code, String message, Set<String> detectedTypes, String highestSeverity) {
+            this(code, message, detectedTypes, highestSeverity, null, List.of(), List.of(), null);
+        }
+    }
+
+    public record BlockedUploadResult(
+            MessageResponse message,
+            List<DlpPublicMatch> matches,
+            List<BlockedAttachmentResponse> attachments
+    ) {
+    }
+
+    public record BlockedAttachmentResponse(
+            Long id,
+            String filename,
+            String mimeType,
+            long size,
+            String decision,
+            int safeCharacters,
+            int estimatedTokens,
+            String extractionStatus,
+            String extractedText,
+            String maskedText,
+            List<DlpPublicMatch> matches
     ) {
     }
 }
-

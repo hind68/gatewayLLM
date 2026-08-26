@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
@@ -40,16 +42,17 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class AttachmentService {
 
     private final AttachmentRepository attachmentRepository;
-    private final DemoUserProvider demoUserProvider;
+    private final CurrentUserService currentUserService;
     private final Path storageRoot;
 
+    @Autowired
     public AttachmentService(
             AttachmentRepository attachmentRepository,
-            DemoUserProvider demoUserProvider,
+            CurrentUserService currentUserService,
             @Value("${app.attachments.storage-dir:storage/attachments}") String storageDir
     ) {
         this.attachmentRepository = attachmentRepository;
-        this.demoUserProvider = demoUserProvider;
+        this.currentUserService = currentUserService;
         this.storageRoot = Paths.get(storageDir).toAbsolutePath().normalize();
     }
 
@@ -112,8 +115,8 @@ public class AttachmentService {
     }
 
     @Transactional(readOnly = true)
-    public AttachmentContentResponse metadata(Long id) {
-        Attachment attachment = ownedAttachment(id);
+    public AttachmentContentResponse metadata(Long id, Jwt jwt) {
+        Attachment attachment = ownedAttachment(id, jwt);
         return new AttachmentContentResponse(
                 attachment.getId(),
                 attachment.getOriginalFilename(),
@@ -129,8 +132,8 @@ public class AttachmentService {
      * Retourne le fichier original stocké uniquement après vérification de la
      * propriété via la requête repository.
      */
-    public ResponseEntity<Resource> originalContent(Long id) {
-        Attachment attachment = ownedAttachment(id);
+    public ResponseEntity<Resource> originalContent(Long id, Jwt jwt) {
+        Attachment attachment = ownedAttachment(id, jwt);
         Path path = resolveStorageKey(attachment.getStorageKey());
         if (!Files.exists(path)) {
             throw new ResponseStatusException(NOT_FOUND, "Attachment file not found");
@@ -142,8 +145,8 @@ public class AttachmentService {
     }
 
     @Transactional(readOnly = true)
-    public AttachmentInspectionResponse inspection(Long id) {
-        Attachment attachment = ownedAttachment(id);
+    public AttachmentInspectionResponse inspection(Long id, Jwt jwt) {
+        Attachment attachment = ownedAttachment(id, jwt);
         String extractedText = attachment.getExtractedText() == null ? "" : attachment.getExtractedText();
         return new AttachmentInspectionResponse(
                 attachment.getId(),
@@ -160,8 +163,8 @@ public class AttachmentService {
      * Retourne le texte masqué de la pièce jointe, en le reconstruisant depuis
      * les spans publics stockés quand les anciennes lignes n'ont pas masked_text.
      */
-    public AttachmentSecureResponse secure(Long id) {
-        Attachment attachment = ownedAttachment(id);
+    public AttachmentSecureResponse secure(Long id, Jwt jwt) {
+        Attachment attachment = ownedAttachment(id, jwt);
         String maskedText = ensureMaskedText(attachment);
         return new AttachmentSecureResponse(
                 attachment.getId(),
@@ -173,8 +176,8 @@ public class AttachmentService {
     }
 
     @Transactional
-    public ResponseEntity<byte[]> secureDownload(Long id) {
-        AttachmentSecureResponse secure = secure(id);
+    public ResponseEntity<byte[]> secureDownload(Long id, Jwt jwt) {
+        AttachmentSecureResponse secure = secure(id, jwt);
         String base = secure.filename().replaceAll("\\.[^.]+$", "");
         String filename = safeHeaderFilename(base + "-securise.txt");
         return ResponseEntity.ok()
@@ -191,16 +194,22 @@ public class AttachmentService {
     }
 
     @Transactional
-    public String maskedTextForConversationAttachment(Long attachmentId, Long conversationId) {
-        Attachment attachment = ownedAttachment(attachmentId);
+    public String maskedTextForConversationAttachment(Long attachmentId, Long conversationId, Jwt jwt) {
+        Attachment attachment = ownedAttachment(attachmentId, jwt);
         if (!attachment.getMessage().getConversation().getId().equals(conversationId)) {
             throw new ResponseStatusException(NOT_FOUND, "Attachment not found");
         }
         return ensureMaskedText(attachment);
     }
 
-    private Attachment ownedAttachment(Long id) {
-        return attachmentRepository.findOwnedById(id, demoUserProvider.currentUser())
+    /**
+     * Resolves ownership strictly from the authenticated JWT - never falls back to a
+     * default/demo account. A missing or invalid JWT fails closed via
+     * {@link CurrentUserService#resolve(Jwt)} instead of silently serving another
+     * account's attachments.
+     */
+    private Attachment ownedAttachment(Long id, Jwt jwt) {
+        return attachmentRepository.findOwnedById(id, currentUserService.resolve(jwt))
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Attachment not found"));
     }
 

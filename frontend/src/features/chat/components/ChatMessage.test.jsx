@@ -38,11 +38,39 @@ describe('ChatMessage', () => {
     expect(html).toContain('Version originale')
     expect(html).toContain('Localisation')
     expect(html).toContain('aria-selected="true"')
+    expect(html).not.toContain('Masquer et renvoyer')
     expect(html).toContain('message user')
     expect(html).toContain('message assistant dlp-blocked-response')
     expect(html).toContain('assistant-header')
     expect(html).not.toContain('disabled')
     expect(html).not.toContain('typing-indicator')
+  })
+
+  it('offers masked resend for medium severity blocks', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessage
+        copiedKey=""
+        fallbackModelName="GPT"
+        message={{
+          id: 44,
+          role: 'USER',
+          status: 'DLP_BLOCKED',
+          content: 'Contact admin@example.com',
+          dlpOriginalText: 'Contact admin@example.com',
+          dlpMaskedText: 'Contact [EMAIL_1]',
+          dlpHighestSeverity: 'MEDIUM',
+          dlpDetectedTypes: ['email'],
+          dlpMatches: [{ type: 'email', start: 8, end: 25, placeholder: '[EMAIL_1]' }],
+        }}
+        onCopy={vi.fn()}
+        onSendSecureMessage={vi.fn()}
+        setCopiedKey={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain('role="tablist"')
+    expect(html).toContain('Version sécurisée')
+    expect(html).toContain('Masquer et renvoyer')
   })
 
   it('styles text DLP tabs and code highlights as compact segmented controls', () => {

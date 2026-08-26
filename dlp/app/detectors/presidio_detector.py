@@ -4,6 +4,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from app.detectors.presidio_config import SUPPORTED_NLP_LANGUAGES, get_analyzer, warm_up_analyzer
 from app.policy import severity_for
+from app.config import DLP_CONTEXT_WINDOW, DLP_MIN_PERSON_CONFIDENCE
 
 
 ENTITY_TYPE_MAP = {
@@ -12,9 +13,9 @@ ENTITY_TYPE_MAP = {
     "CREDIT_CARD": "credit_card",
     "IBAN_CODE": "iban",
     "IP_ADDRESS": "ip_address",
-    "LOCATION": "location",
     "URL": "url",
     "ORGANIZATION": "organization",
+    "PERSON": "person_name",
     "MOROCCAN_PHONE_LOCAL": "phone_number",
     "MOROCCAN_PHONE_INTERNATIONAL": "phone_number",
     "MOROCCAN_CIN": "moroccan_cin",
@@ -85,6 +86,25 @@ _NLP_EXCLUDED_TERMS = {
     "url",
     "spring boot",
     "l objectif",
+    "fictives",
+    "fichier",
+    "telephone",
+    "numero",
+    "cvv",
+    "identite",
+    "contact",
+    "informations bancaires",
+    "carte bancaire de test",
+    "identifiants et secrets fictifs",
+    "numero de carte",
+    "carte nationale",
+    "carte d identite",
+    "numero de carte d identite",
+    "national id",
+    "national identity card",
+    "identity card",
+    "passport number",
+    "document number",
 }
 
 _TECHNICAL_CONTEXT_PATTERNS = (
@@ -135,7 +155,7 @@ def detect_with_presidio(text: str, language: str = "en") -> list[dict]:
     results = get_analyzer().analyze(text=text, language=language)
     matches = []
     for result in results:
-        if result.entity_type == "PERSON":
+        if result.entity_type == "LOCATION":
             continue
         detected_text = text[result.start:result.end]
         if result.entity_type == "URL":
@@ -145,7 +165,15 @@ def detect_with_presidio(text: str, language: str = "en") -> list[dict]:
                 or (markdown_destination and _is_public_non_sensitive_url(markdown_destination))
             ):
                 continue
-        if _is_generic_nlp_false_positive(result.entity_type, detected_text, text):
+        if _is_generic_nlp_false_positive(
+            result.entity_type,
+            detected_text,
+            text,
+            result.start,
+            result.end,
+        ):
+            continue
+        if result.entity_type == "PERSON" and float(result.score) < DLP_MIN_PERSON_CONFIDENCE:
             continue
 
         internal_type = ENTITY_TYPE_MAP.get(result.entity_type)
@@ -163,13 +191,21 @@ def detect_with_presidio(text: str, language: str = "en") -> list[dict]:
     return matches
 
 
-def _is_generic_nlp_false_positive(entity_type: str, detected_text: str, full_text: str = "") -> bool:
+def _is_generic_nlp_false_positive(
+    entity_type: str,
+    detected_text: str,
+    full_text: str = "",
+    start: int | None = None,
+    end: int | None = None,
+) -> bool:
     if entity_type not in _GENERIC_NLP_ENTITY_TYPES:
         return False
     normalized_text = _normalize_nlp_text(detected_text)
     if normalized_text in _NLP_EXCLUDED_TERMS:
         return True
-    if _is_technical_context(full_text):
+    if _is_field_label(full_text, start, end):
+        return True
+    if _is_technical_context_near_span(full_text, start, end):
         return True
     normalized_upper = detected_text.strip().upper()
     if normalized_upper in _NLP_ACRONYM_FALSE_POSITIVES:
@@ -177,9 +213,21 @@ def _is_generic_nlp_false_positive(entity_type: str, detected_text: str, full_te
     normalized_lower = normalized_text
     if entity_type in {"LOCATION", "ORGANIZATION"} and normalized_lower.startswith(("contactez ", "contacter ", "contact ")):
         return True
-    if detected_text.strip() == normalized_lower:
-        return True
     return normalized_lower in _NLP_SINGLE_TOKEN_FALSE_POSITIVES
+
+
+def _is_field_label(text: str, start: int | None, end: int | None) -> bool:
+    """Reject an NLP entity when its line position shows it is a field label.
+
+    This filters `Téléphone :`, `Numéro :`, and `CVV :` without filtering the
+    value after the colon or relying solely on a language-specific word list.
+    """
+    if start is None or end is None or not (0 <= start < end <= len(text)):
+        return False
+    line_end = text.find("\n", end)
+    if line_end < 0:
+        line_end = len(text)
+    return text[end:line_end].lstrip().startswith(":")
 
 
 def _is_public_non_sensitive_url(value: str) -> bool:
@@ -248,3 +296,27 @@ def _is_technical_context(text: str) -> bool:
     if not text:
         return False
     return any(pattern.search(text) for pattern in _TECHNICAL_CONTEXT_PATTERNS)
+
+
+def _is_technical_context_near_span(
+    text: str,
+    start: int | None,
+    end: int | None,
+    radius: int = DLP_CONTEXT_WINDOW,
+) -> bool:
+    """Filter NLP noise only when the detected span is near technical syntax.
+
+    Applying the technical-content rule to the whole message caused unrelated
+    locations and organizations to disappear whenever a code sample or API
+    header appeared elsewhere in the same message.
+    """
+    if not text:
+        return False
+    if start is None or end is None:
+        return _is_technical_context(text)
+    line_start = text.rfind("\n", 0, start) + 1
+    following_newline = text.find("\n", end)
+    line_end = len(text) if following_newline < 0 else following_newline
+    window_start = max(line_start, start - radius)
+    window_end = min(line_end, end + radius)
+    return _is_technical_context(text[window_start:window_end])

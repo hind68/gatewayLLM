@@ -1,11 +1,17 @@
 import json
 import re
 import threading
+import math
+import ipaddress
+from collections import Counter
 from pathlib import Path
 
 from app.detectors.luhn import is_luhn_valid
 from app.detectors.iban import is_iban_valid
 from app.pipeline.masking import is_neutralized_placeholder_value
+from app.pipeline.normalization import normalize_for_scanning
+from app.pipeline.evidence import DetectionEvidence
+from app.config import DLP_CONTEXT_WINDOW, DLP_MIN_SECRET_ENTROPY, DLP_MIN_SECRET_LENGTH
 
 # Patterns live in patterns.json rather than as hardcoded constants here,
 # so adding a new one is a data change, not a code change - see
@@ -17,6 +23,7 @@ import os
 _PATTERNS_FILE = Path(os.environ.get("PATTERNS_FILE", Path(__file__).parent / "patterns.json"))
 
 _VALID_SEVERITIES = {"high", "medium", "low"}
+_VALID_ACTIONS = {"ALLOW", "MASK", "BLOCK"}
 
 # Named, reusable post-match checks a pattern can opt into via its
 # "validator" field. Arbitrary Python logic can't live in JSON, so this is
@@ -24,16 +31,83 @@ _VALID_SEVERITIES = {"high", "medium", "low"}
 # actual logic stays here. Same idea as Luhn on credit cards, just made
 # pluggable for any future pattern that needs more than "the regex
 # matched" (see iban_morocco's MOD-97 check for another example).
+def _shannon_entropy(value: str) -> float:
+    if not value:
+        return 0.0
+    counts = Counter(value)
+    return -sum((count / len(value)) * math.log2(count / len(value)) for count in counts.values())
+
+
+def _generic_secret_shape(value: str) -> bool:
+    return (
+        len(value) >= DLP_MIN_SECRET_LENGTH
+        and not value.startswith("eyJ")
+        and any(char.isalpha() for char in value)
+        and any(char.isdigit() for char in value)
+        and _shannon_entropy(value) >= DLP_MIN_SECRET_ENTROPY
+    )
+
+
+def _valid_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
 _VALIDATORS = {
     "luhn": is_luhn_valid,
     "iban_checksum": is_iban_valid,
     "mixed_case": lambda v: any(c.isupper() for c in v) and any(c.islower() for c in v),
-    "generic_secret": lambda v: (
-        any(c.isupper() for c in v)
-        and any(c.islower() for c in v)
-        and not v.startswith("eyJ")
-    ),
+    "generic_secret": _generic_secret_shape,
+    "ip_address": lambda value: _valid_ip(value),
 }
+
+_SECRET_CONTEXT = re.compile(r"(?i)\b(?:token|api[_-]?key|apikey|password|passwd|pwd|secret|client_secret|access_token|refresh_token|private_key|credential)\b")
+_ENV_REFERENCE = re.compile(r"(?i)(?:os\.getenv\s*\(|os\.environ\s*\[|system\.getenv\s*\(|process\.env\.|\$\{|\$[A-Z_][A-Z0-9_]*)[^\n]{0,100}$")
+_UUID_OR_HASH = re.compile(r"(?i)^(?:[0-9a-f]{32,64}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$")
+_SENSITIVE_INFRA_CONTEXT = re.compile(r"(?i)\b(?:production|prod|database|db|vpn|ssh|server|internal|credential)s?\b")
+_DEVELOPMENT_CONTEXT = re.compile(r"(?i)\b(?:development|dev|local|localhost|test|testing)\b")
+_NEGATIVE_SECRET_CONTEXT = re.compile(r"(?i)\b(?:not|isn['’]?t|pas|n['’]est\s+pas)\s+(?:a\s+|un[e]?\s+)?secret\b")
+_PLACEHOLDER_SECRET = re.compile(r"(?i)^(?:change(?:me|it)|replace[_-]?me|your[_-].*|example|dummy|<[^>]+>|\$\{[^}]+\})$")
+_SHELL_REFERENCE = re.compile(r"(?i)^\$(?:\{[A-Z_][A-Z0-9_]*\}|[A-Z_][A-Z0-9_]*)$")
+
+
+def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    return line_start, len(text) if line_end < 0 else line_end
+
+
+def _secret_context_window(text: str, start: int, end: int) -> str:
+    line_start, line_end = _line_bounds(text, start, end)
+    current_line = text[line_start:line_end]
+    if _SECRET_CONTEXT.search(current_line):
+        return current_line
+    # Preserve intentional `client_secret=\nvalue` support without allowing an
+    # unrelated secret-bearing line to influence the next record.
+    if line_start:
+        previous_start = text.rfind("\n", 0, line_start - 1) + 1
+        previous_line = text[previous_start:line_start - 1]
+        if re.search(r"[:=]\s*$", previous_line) and _SECRET_CONTEXT.search(previous_line):
+            return previous_line + "\n" + current_line
+    return current_line
+
+
+def _classify_ip(value: str, window: str) -> tuple[str, str]:
+    address = ipaddress.ip_address(value)
+    if address.is_loopback:
+        category, severity = "loopback", "low"
+    elif address.is_private:
+        category, severity = "private", "low"
+    else:
+        category, severity = "public", "medium"
+    if _SENSITIVE_INFRA_CONTEXT.search(window) and not (
+        category == "loopback" and _DEVELOPMENT_CONTEXT.search(window)
+    ):
+        severity = "medium" if severity == "low" else "high"
+    return category, severity
 
 _TYPE_ALIASES = {
     "phone": "phone_number",
@@ -69,6 +143,11 @@ def _compile_rule(entry: dict) -> dict:
             f"Pattern '{entry['name']}' has severity '{severity}', "
             f"must be one of {sorted(_VALID_SEVERITIES)}"
         )
+    action = entry.get("action")
+    if action is not None:
+        action = str(action).upper()
+        if action not in _VALID_ACTIONS:
+            raise ValueError(f"Pattern '{entry['name']}' has action '{action}', must be one of {sorted(_VALID_ACTIONS)}")
 
     validator_name = entry.get("validator")
     if validator_name is not None and validator_name not in _VALIDATORS:
@@ -87,6 +166,8 @@ def _compile_rule(entry: dict) -> dict:
         "type": _TYPE_ALIASES.get(entry["type"], entry["type"]),
         "regex": regex,
         "severity": severity,
+        "action": action,
+        "enabled": entry.get("enabled", True) is not False,
         "validator": _VALIDATORS.get(validator_name),
         "validator_name": validator_name,
         # Optional: report a specific capture group's span instead of the
@@ -101,11 +182,7 @@ def _compile_rule(entry: dict) -> dict:
 def load_patterns(path: Path = _PATTERNS_FILE) -> list[dict]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return [
-        _compile_rule(entry)
-        for entry in data.get("patterns", [])
-        if _TYPE_ALIASES.get(entry.get("type"), entry.get("type")) != "person_name"
-    ]
+    return [_compile_rule(entry) for entry in data.get("patterns", [])]
 
 
 _rules = load_patterns()
@@ -118,6 +195,8 @@ def _rules_of_type(pii_type: str) -> list[dict]:
 def _run_rules(rules: list[dict], text: str) -> list[dict]:
     matches = []
     for rule in rules:
+        if not rule["enabled"]:
+            continue
         for match in rule["regex"].finditer(text):
             group = rule["capture_group"]
             if group is not None:
@@ -136,14 +215,62 @@ def _run_rules(rules: list[dict], text: str) -> list[dict]:
                 continue
             if rule["validator"] and not rule["validator"](value):
                 continue
+            window = text[max(0, start - DLP_CONTEXT_WINDOW):min(len(text), end + DLP_CONTEXT_WINDOW)]
+            context_window = re.sub(r"\[[A-Z0-9_]+\]", " ", _secret_context_window(text, start, end))
+            context_signals = ["secret_keyword"] if _SECRET_CONTEXT.search(context_window) else []
+            if rule["validator_name"] == "generic_secret":
+                prefix = re.sub(r"\[[A-Z0-9_]+\]", " ", text[max(0, start - DLP_CONTEXT_WINDOW):start])
+                if _ENV_REFERENCE.search(prefix):
+                    continue
+                # UUIDs and hashes need explicit sensitive context; ordinary identifiers do not.
+                if _UUID_OR_HASH.fullmatch(value) and not context_signals:
+                    continue
+                if not context_signals:
+                    continue
+            if rule["type"] in {"hardcoded_secret", "hardcoded_password", "api_key"}:
+                prefix = text[max(0, start - DLP_CONTEXT_WINDOW):start]
+                if (_NEGATIVE_SECRET_CONTEXT.search(prefix)
+                        or _PLACEHOLDER_SECRET.fullmatch(value.strip("'\""))
+                        or _SHELL_REFERENCE.fullmatch(value.strip("'\""))):
+                    continue
+            if rule["type"] == "email":
+                prefix = text[max(0, start - DLP_CONTEXT_WINDOW):start]
+                if re.search(r"(?i)(?:mongodb(?:\+srv)?|postgresql?|mysql|redis)://[^\s@]*:$", prefix):
+                    continue
+            if rule["type"] == "phone_number":
+                line_start, line_end = _line_bounds(text, start, end)
+                if re.search(r"(?i)(?:\bIBAN\b|\[IBAN(?:_|\]))", text[line_start:line_end]):
+                    continue
+            if rule["type"] == "credit_card" and re.search(r"(?i)(?:TXN|INV|ORDER|CASE)-[^\n]{0,24}$", text[max(0, start - 30):start]):
+                continue
+            if rule["type"] == "ip_address":
+                prefix = text[max(0, start - 30):start]
+                if re.search(r"(?i)(?:t[eé]l[eé]phone|phone|mobile|gsm|whatsapp)[^\n]{0,24}$", prefix):
+                    continue
+            evidence = DetectionEvidence(
+                entity_type=rule["type"], start=start, end=end, source="regex",
+                raw_score=0.78 if rule["validator"] else 0.72,
+                pattern_name=rule["name"], validator_passed=bool(rule["validator"]),
+                context_signals=context_signals,
+            )
             matches.append({
                 "type": rule["type"], "value": value,
                 "start": start, "end": end,
                 "severity": rule["severity"], "source": "regex",
-                "score": 0.95 if rule["validator"] else 0.8,
+                "score": evidence.confidence(),
                 "validated": bool(rule["validator"]),
                 "pattern_name": rule["name"],
             })
+            if rule["type"] == "ip_address":
+                category, contextual_severity = _classify_ip(value, window)
+                matches[-1]["ip_category"] = category
+                matches[-1]["severity"] = contextual_severity
+                # Do not inherit the old blanket BLOCK action; the normal
+                # configurable severity policy decides the final action.
+                matches[-1].pop("action", None)
+            if rule["action"]:
+                if rule["type"] != "ip_address":
+                    matches[-1]["action"] = rule["action"]
     return matches
 
 
@@ -164,7 +291,16 @@ def detect_api_keys(text: str) -> list[dict]:
 
 
 def run_regex_detectors(text: str) -> list[dict]:
-    return _run_rules(_rules, text)
+    normalized = normalize_for_scanning(text)
+    matches = _run_rules(_rules, normalized.text)
+    for match in matches:
+        normalized_start, normalized_end = match["start"], match["end"]
+        original_start, original_end = normalized.original_span(normalized_start, normalized_end)
+        match["normalized_start"] = normalized_start
+        match["normalized_end"] = normalized_end
+        match["start"], match["end"] = original_start, original_end
+        match["value"] = text[original_start:original_end]
+    return matches
 
 
 def add_pattern(
@@ -185,8 +321,6 @@ def add_pattern(
     """
     if severity not in _VALID_SEVERITIES:
         raise ValueError(f"severity must be one of {sorted(_VALID_SEVERITIES)}, got '{severity}'")
-    if _TYPE_ALIASES.get(pii_type, pii_type) == "person_name":
-        raise ValueError("person_name detection is disabled by policy")
     if validator is not None and validator not in _VALIDATORS:
         raise ValueError(f"Unknown validator '{validator}'. Known validators: {sorted(_VALIDATORS)}")
     try:
@@ -221,3 +355,16 @@ def add_pattern(
         tmp_path.replace(path)
 
         _rules.append(_compile_rule(entry))
+
+
+def replace_patterns(entries: list[dict], path: Path = _PATTERNS_FILE) -> list[dict]:
+    """Validate, persist, and activate the complete administrator rule set."""
+    compiled = [_compile_rule(entry) for entry in entries]
+    with _rules_lock:
+        tmp_path = path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({"patterns": entries}, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        tmp_path.replace(path)
+        _rules[:] = compiled
+    return entries

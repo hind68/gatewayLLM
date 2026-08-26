@@ -7,5 +7,4 @@ public record DlpSafeMessage(
         String persistedContent,
         String highestSeverity,
         List<DlpAttachmentAnalysis> attachments
-) {
-}
+) {}

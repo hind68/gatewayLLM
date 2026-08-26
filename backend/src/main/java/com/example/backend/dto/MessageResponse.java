@@ -22,4 +22,10 @@ public record MessageResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
+    public MessageResponse(Long id, String role, Integer ordre, String statut, String contenu,
+                            Long responseToId, String modelAlias, String modelDisplayName,
+                            Instant createdAt, Instant updatedAt) {
+        this(id, role, ordre, statut, contenu, responseToId, modelAlias, modelDisplayName,
+                null, List.of(), List.of(), null, List.of(), createdAt, updatedAt);
+    }
 }

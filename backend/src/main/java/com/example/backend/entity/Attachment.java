@@ -32,7 +32,7 @@ public class Attachment {
     private Message message;
 
     @Column(name = "original_filename", nullable = false, length = 255)
-    private String originalFilename; 
+    private String originalFilename;
 
     @Column(name = "storage_key", nullable = false, length = 500)
     private String storageKey;

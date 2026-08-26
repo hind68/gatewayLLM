@@ -1,8 +1,14 @@
+import { useContext } from 'react'
+import { AuthContext } from '../../AuthProvider'
+import { getInitials } from '../../utils/authUtils'
+import { Icon } from '../admin/AdminComponents'
+import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
 
 export default function Sidebar({
   activeConversation,
+  admin,
   archiveConversation,
   closeSidebarPanels,
   closeTransientMenus,
@@ -41,6 +47,11 @@ export default function Sidebar({
   toggleCollapsedPanel,
   toggleSidebar,
 }) {
+  const keycloak = useContext(AuthContext)
+  const displayName = keycloak?.tokenParsed?.name || keycloak?.tokenParsed?.preferred_username || 'Utilisateur'
+  const initials = getInitials(displayName)
+  const isAdminMode = Boolean(admin?.showAdminDashboard)
+
   const historyListProps = {
     activeConversation,
     archiveConversation,
@@ -62,11 +73,20 @@ export default function Sidebar({
     showArchived,
   }
 
+  const handleAdminClick = () => {
+    setIsAccountMenuOpen(false)
+    admin?.setShowAdminDashboard(true)
+  }
+
+  const closeAdminDashboard = () => {
+    admin?.setShowAdminDashboard(false)
+  }
+
   return (
     <>
       {isSidebarOpen && <button className="mobile-overlay" type="button" aria-label="Fermer" onClick={toggleSidebar} />}
 
-      <aside className="sidebar" aria-label="Navigation Synapse" data-menu-root>
+      <aside className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'}`} aria-label="Navigation Synapse" data-menu-root>
         <div className="sidebar-header">
           <button
             className="sidebar-brand"
@@ -97,104 +117,158 @@ export default function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-navigation" aria-label="Actions principales">
-          <div className="sidebar-primary-nav">
-            <button type="button" title="Nouvelle conversation" aria-label="Nouvelle conversation" onClick={() => { closeSidebarPanels(); newConversation() }}>
-              <span className="sidebar-icon" aria-hidden="true">
-                <img src="/assets/new-tab.png" alt="" />
-              </span>
-              <span>Nouvelle conversation</span>
-            </button>
-            <button
-              className={isSearchModalOpen ? 'active' : ''}
-              type="button"
-              title="Rechercher"
-              aria-label="Rechercher"
-              onClick={() => {
-                setIsSearchModalOpen(true)
-                if (isSidebarOpen) {
-                  setIsAccountMenuOpen(false)
-                  setActiveView('chat')
-                  setCollapsedPanel(null)
-                } else {
-                  setCollapsedPanel(null)
-                }
-              }}
-            >
-              <span className="sidebar-icon" aria-hidden="true">
-                <img src="/assets/search.png" alt="" />
-              </span>
-              <span>Rechercher</span>
-            </button>
-            <button
-              className={isModelsView ? 'active' : ''}
-              type="button"
-              title="Explorer les modèles"
-              aria-label="Explorer les modèles"
-              onClick={() => {
-                closeTransientMenus()
-                setIsAccountMenuOpen(false)
-                setActiveView((current) => (current === 'models' ? 'chat' : 'models'))
-              }}
-            >
-              <span className="sidebar-icon" aria-hidden="true">
-                <img src="/assets/compass.png" alt="" />
-              </span>
-              <span>Explorer les modèles</span>
-            </button>
+        <div className="sidebar-navigation-switch">
+          <div className="sidebar-chat-nav">
+            <nav className="sidebar-navigation" aria-label="Actions principales">
+              <div className="sidebar-primary-nav">
+                <button
+                  type="button"
+                  title="Nouvelle conversation"
+                  aria-label="Nouvelle conversation"
+                  onClick={() => { closeAdminDashboard(); closeSidebarPanels(); newConversation() }}
+                >
+                  <span className="sidebar-icon" aria-hidden="true">
+                    <img src="/assets/new-tab.png" alt="" />
+                  </span>
+                  <span>Nouvelle conversation</span>
+                </button>
+                <button
+                  className={isSearchModalOpen ? 'active' : ''}
+                  type="button"
+                  title="Rechercher"
+                  aria-label="Rechercher"
+                  onClick={() => {
+                    setIsSearchModalOpen(true)
+                    if (isSidebarOpen) {
+                      setIsAccountMenuOpen(false)
+                      setActiveView('chat')
+                      setCollapsedPanel(null)
+                    } else {
+                      setCollapsedPanel(null)
+                    }
+                  }}
+                >
+                  <span className="sidebar-icon" aria-hidden="true">
+                    <img src="/assets/search.png" alt="" />
+                  </span>
+                  <span>Rechercher</span>
+                </button>
+                <button
+                  className={isModelsView ? 'active' : ''}
+                  type="button"
+                  title="Explorer les modèles"
+                  aria-label="Explorer les modèles"
+                  onClick={() => {
+                    closeAdminDashboard()
+                    closeTransientMenus()
+                    setIsAccountMenuOpen(false)
+                    setActiveView((current) => (current === 'models' ? 'chat' : 'models'))
+                  }}
+                >
+                  <span className="sidebar-icon" aria-hidden="true">
+                    <img src="/assets/compass.png" alt="" />
+                  </span>
+                  <span>Explorer les modèles</span>
+                </button>
+              </div>
+              <button
+                className={`recent-nav-button ${collapsedPanel === 'history' ? 'active' : ''}`}
+                type="button"
+                title="Discussions récentes"
+                aria-label="Discussions récentes"
+                onClick={() => {
+                  closeAdminDashboard()
+                  setShowArchived(false)
+                  if (isSidebarOpen) {
+                    setIsAccountMenuOpen(false)
+                    setActiveView('chat')
+                    setCollapsedPanel(null)
+                    setModelFilter('')
+                    setSearch('')
+                    setOpenMenuId(null)
+                  } else {
+                    setActiveView('chat')
+                    setModelFilter('')
+                    setSearch('')
+                    setOpenMenuId(null)
+                    toggleCollapsedPanel('history')
+                  }
+                }}
+              >
+                <span className="sidebar-icon" aria-hidden="true">
+                  <img src="/assets/message.png" alt="" />
+                </span>
+                <span>Discussions récentes</span>
+              </button>
+            </nav>
+
+            <section className="recent-section">
+              <div className="history-heading">
+                <span>Récents</span>
+                <button
+                  type="button"
+                  className="archive-toggle"
+                  title={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
+                  aria-label={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
+                  aria-expanded={showTabs}
+                  onClick={() => setShowTabs(!showTabs)}
+                >
+                  <img src="/assets/archive.png" alt="" aria-hidden="true" />
+                </button>
+              </div>
+
+              {showTabs && <ArchiveTabs showArchived={showArchived} setShowArchived={setShowArchived} />}
+
+              <ConversationList
+                {...historyListProps}
+                openConversation={openConversation}
+              />
+            </section>
           </div>
-          <button
-            className={`recent-nav-button ${collapsedPanel === 'history' ? 'active' : ''}`}
-            type="button"
-            title="Discussions récentes"
-            aria-label="Discussions récentes"
-            onClick={() => {
-              setShowArchived(false)
-              if (isSidebarOpen) {
-                setIsAccountMenuOpen(false)
-                setActiveView('chat')
-                setCollapsedPanel(null)
-                setModelFilter('')
-                setSearch('')
-                setOpenMenuId(null)
-              } else {
-                setActiveView('chat')
-                setModelFilter('')
-                setSearch('')
-                setOpenMenuId(null)
-                toggleCollapsedPanel('history')
-              }
-            }}
-          >
-            <span className="sidebar-icon" aria-hidden="true">
-              <img src="/assets/message.png" alt="" />
-            </span>
-            <span>Discussions récentes</span>
-          </button>
-        </nav>
 
-        <section className="recent-section">
-          <div className="history-heading">
-            <span>Récents</span>
+          {admin?.isAdmin && (
+            <div className="sidebar-admin-mode-nav">
+              <nav className="sidebar-navigation admin-sidebar-navigation" aria-label="Navigation administration">
+                <div className="sidebar-primary-nav">
+                  {ADMIN_NAV_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      className={admin?.adminSection === item.id ? 'active' : ''}
+                      type="button"
+                      aria-current={admin?.adminSection === item.id ? 'page' : undefined}
+                      onClick={() => admin?.setAdminSection?.(item.id)}
+                    >
+                      <span className="sidebar-icon admin-nav-icon" aria-hidden="true">
+                        {item.iconPng ? <img src={item.iconPng} alt="" /> : <Icon name={item.icon} size={19} />}
+                      </span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </nav>
+            </div>
+          )}
+        </div>
+
+        {admin?.isAdmin && (
+          <nav className="sidebar-admin-navigation" aria-label={isAdminMode ? 'Retour au chat' : 'Administration'}>
             <button
               type="button"
-              className="archive-toggle"
-              title={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
-              aria-label={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
-              aria-expanded={showTabs}
-              onClick={() => setShowTabs(!showTabs)}
+              title={isAdminMode ? 'Retour au chat' : 'Administration'}
+              aria-label={isAdminMode ? 'Retour au chat' : 'Administration'}
+              onClick={isAdminMode ? closeAdminDashboard : handleAdminClick}
             >
-              <img src="/assets/archive.png" alt="" aria-hidden="true" />
+              <span className="sidebar-icon sidebar-mode-control chat-action" aria-hidden="true">
+                <img src="/assets/administrateur.png" alt="" />
+              </span>
+              <span className="sidebar-icon sidebar-mode-control admin-action admin-back-icon" aria-hidden="true">
+                <img src="/assets/return-to-chat.png" alt="" />
+              </span>
+              <span className="sidebar-mode-label chat-action">Administration</span>
+              <span className="sidebar-mode-label admin-action">Retour au chat</span>
             </button>
-          </div>
-
-          {showTabs && <ArchiveTabs showArchived={showArchived} setShowArchived={setShowArchived} />}
-
-          <ConversationList
-            {...historyListProps}
-            openConversation={openConversation}
-          />
-        </section>
+          </nav>
+        )}
 
         <div className="sidebar-user" data-menu-root>
           <button
@@ -207,10 +281,10 @@ export default function Sidebar({
             }}
           >
             <span className="user-avatar-wrapper">
-              <span className="user-avatar">HA</span>
+              <span className="user-avatar">{initials}</span>
             </span>
             <span className="user-copy">
-              <strong>Hind Alami</strong>
+              <strong>{displayName}</strong>
             </span>
           </button>
           {isSidebarOpen && isAccountMenuOpen && (
@@ -246,9 +320,11 @@ export default function Sidebar({
 }
 
 function AccountPopover({ className = 'account-popover-open' }) {
+  const keycloak = useContext(AuthContext)
+
   return (
     <div className={`account-popover ${className}`} role="menu" data-menu-root>
-      <button type="button" role="menuitem">
+      <button type="button" role="menuitem" onClick={() => keycloak?.logout({ redirectUri: window.location.origin })}>
         Se déconnecter
       </button>
     </div>

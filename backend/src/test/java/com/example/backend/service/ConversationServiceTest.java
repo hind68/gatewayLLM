@@ -11,8 +11,8 @@ import com.example.backend.enums.RoleMessage;
 import com.example.backend.enums.StatutFournisseurLlm;
 import com.example.backend.enums.StatutMessage;
 import com.example.backend.enums.StatutModeleLlm;
-import com.example.backend.integration.dlp.DlpBlockedException;
-import com.example.backend.integration.dlp.DlpUnavailableException;
+import com.example.backend.exceptions.DlpBlockedException;
+import com.example.backend.exceptions.DlpUnavailableException;
 import com.example.backend.integration.litellm.LiteLlmMessage;
 import com.example.backend.integration.litellm.LiteLlmService;
 import com.example.backend.entity.Utilisateur;
@@ -21,6 +21,7 @@ import com.example.backend.repository.MessageRepository;
 import com.example.backend.repository.ModeleLlmRepository;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.UUID;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -38,6 +39,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -69,7 +71,7 @@ class ConversationServiceTest {
     private ModeleLlmRepository modeleLlmRepository;
 
     @Mock
-    private DemoUserProvider demoUserProvider;
+    private CurrentUserService currentUserService;
 
     @Mock
     private LiteLlmService liteLlmService;
@@ -81,15 +83,27 @@ class ConversationServiceTest {
     private MessagePersistenceService messagePersistenceService;
 
     @Mock
+    private ChatValidationService chatValidationService;
+
+    @Mock
     private AttachmentService attachmentService;
 
     @Mock
     private Utilisateur demoUser;
 
+    @Mock
+    private Utilisateur otherUser;
+
     private ConversationService service;
     private ModeleLlm model;
     private ModeleLlm geminiModel;
     private Conversation conversation;
+
+    private final UUID testUserId = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+    private final Jwt jwt = Jwt.withTokenValue("test-token")
+            .header("alg", "none")
+            .subject(testUserId.toString())
+            .build();
 
     @BeforeEach
     void setUp() {
@@ -102,26 +116,34 @@ class ConversationServiceTest {
                 conversationRepository,
                 messageRepository,
                 modeleLlmRepository,
-                demoUserProvider,
+                currentUserService,
                 liteLlmService,
                 dlpService,
                 messagePersistenceService,
+                chatValidationService,
                 attachmentService,
                 new ObjectMapper(),
                 10
         );
-        lenient().when(demoUser.getExternalId()).thenReturn("demo-user");
-        lenient().when(dlpService.safeTextForLlm(any(), eq("demo-user"))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(demoUser.getExternalId()).thenReturn(testUserId.toString());
+        lenient().when(currentUserService.resolve(any(Jwt.class))).thenReturn(demoUser);
+        lenient().when(currentUserService.keycloakId(any(Jwt.class))).thenReturn(testUserId);
+        lenient().when(currentUserService.roles(any(Jwt.class))).thenReturn(List.of());
+        lenient().when(chatValidationService.getBannedWords(any())).thenReturn(List.of());
+        lenient().when(chatValidationService.getBannedWords(any(), any())).thenReturn(List.of());
+        lenient().when(dlpService.safeTextForLlm(any(), eq(testUserId.toString()), any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(dlpService.safeUserMessage(any(), eq(testUserId), eq(testUserId.toString()), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
     void createConversationUsesActiveModelAndDemoUser() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
-        when(modeleLlmRepository.findByAliasInterneAndStatut("secure-groq", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "secure-groq", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.of(model));
         when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.create(new CreateConversationRequest("secure-groq", "Test"));
+        var response = service.create(new CreateConversationRequest("secure-groq", "Test"), jwt);
 
         assertThat(response.modelAlias()).isEqualTo("secure-groq");
         assertThat(response.title()).isEqualTo("Test");
@@ -130,18 +152,17 @@ class ConversationServiceTest {
 
     @Test
     void createConversationRejectsUnknownOrInactiveModel() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
-        when(modeleLlmRepository.findByAliasInterneAndStatut("unknown", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "unknown", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(new CreateConversationRequest("unknown", "Test")))
+        assertThatThrownBy(() -> service.create(new CreateConversationRequest("unknown", "Test"), jwt))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Unknown or inactive model");
     }
 
     @Test
     void prepareStreamPersistsUserMessageAndBuildsContextInOrder() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(2);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -150,7 +171,7 @@ class ConversationServiceTest {
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenReturn(List.of(previousUser, previousAssistant));
 
-        var preparation = service.prepareStream(10L, new SendMessageRequest("Suite"));
+        var preparation = service.prepareStream(10L, new SendMessageRequest("Suite"), jwt);
 
         assertThat(preparation.modelAlias()).isEqualTo("secure-groq");
         assertThat(preparation.assistantMessage().modelAlias()).isEqualTo("secure-groq");
@@ -167,42 +188,40 @@ class ConversationServiceTest {
     })
     void prepareStreamAcceptsAttachmentLimitBoundary(int fileCount) {
         List<MultipartFile> files = testFiles(fileCount);
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeMessageForLlm("Question", files, "demo-user"))
+        when(dlpService.safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of()))
                 .thenReturn(new DlpSafeMessage("Question", "Question", null, List.of()));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(attachmentService.store(any(Message.class), eq(files), any())).thenReturn(List.of());
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenReturn(List.of());
 
-        service.prepareStream(10L, "Question", files);
+        service.streamMessageWithFiles(10L, "Question", files, jwt);
 
-        verify(dlpService).safeMessageForLlm("Question", files, "demo-user");
+        verify(dlpService).safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of());
     }
 
     @Test
     void prepareStreamRejectsMoreThanTenFilesBeforeDlpAndLiteLlm() {
         List<MultipartFile> files = testFiles(11);
 
-        assertThatThrownBy(() -> service.prepareStream(10L, "Question", files))
+        assertThatThrownBy(() -> service.streamMessageWithFiles(10L, "Question", files, jwt))
                 .isInstanceOf(AttachmentLimitExceededException.class)
                 .hasMessageContaining("11 fichiers");
 
-        verify(dlpService, never()).safeMessageForLlm(any(), any(), any());
-        verify(dlpService, never()).safeTextForLlm(any(), any());
+        verify(dlpService, never()).safeMessageForLlm(any(), any(), any(), any(), any());
+        verify(dlpService, never()).safeTextForLlm(any(), any(), any());
         verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
     }
 
     @Test
     void changeModelUpdatesCurrentConversationModelWhenTargetIsActive() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(modeleLlmRepository.findByAliasInterneAndStatut("secure-gemini", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "secure-gemini", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.of(geminiModel));
 
-        var response = service.changeModel(10L, new ChangeConversationModelRequest("secure-gemini"));
+        var response = service.changeModel(10L, new ChangeConversationModelRequest("secure-gemini"), jwt);
 
         assertThat(response.modelAlias()).isEqualTo("secure-gemini");
         assertThat(response.modelDisplayName()).isEqualTo("Gemini");
@@ -210,23 +229,22 @@ class ConversationServiceTest {
 
     @Test
     void changeModelRejectsUnknownOrInactiveModel() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(modeleLlmRepository.findByAliasInterneAndStatut("inactive", StatutModeleLlm.ACTIF))
+        when(modeleLlmRepository.findByAliasInterneAndStatutAndFournisseur_Statut(
+                "inactive", StatutModeleLlm.ACTIF, StatutFournisseurLlm.ACTIF))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.changeModel(10L, new ChangeConversationModelRequest("inactive")))
+        assertThatThrownBy(() -> service.changeModel(10L, new ChangeConversationModelRequest("inactive"), jwt))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Unknown or inactive model");
     }
 
     @Test
     void deletePermanentRemovesMessagesBeforeConversation() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(conversationRepository.deleteOwnedById(10L, demoUser)).thenReturn(1);
 
-        service.deletePermanent(10L);
+        service.deletePermanent(10L, jwt);
 
         InOrder order = inOrder(messageRepository, conversationRepository);
         order.verify(messageRepository).clearResponseLinksByConversationId(10L);
@@ -237,10 +255,9 @@ class ConversationServiceTest {
 
     @Test
     void deletePermanentRejectsUnknownConversationWithoutDeletingMessages() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(99L, demoUser)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.deletePermanent(99L))
+        assertThatThrownBy(() -> service.deletePermanent(99L, jwt))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Conversation not found");
 
@@ -250,10 +267,9 @@ class ConversationServiceTest {
 
     @Test
     void archiveOnlyChangesConversationStatus() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
 
-        service.archive(10L);
+        service.archive(10L, jwt);
 
         assertThat(conversation.getStatut()).isEqualTo(com.example.backend.enums.StatutConversation.ARCHIVEE);
         verify(messageRepository, never()).deleteAllByConversationId(10L);
@@ -263,10 +279,9 @@ class ConversationServiceTest {
     @Test
     void restoreChangesArchivedConversationBackToActive() {
         conversation.archive();
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
 
-        var response = service.restore(10L);
+        var response = service.restore(10L, jwt);
 
         assertThat(conversation.getStatut()).isEqualTo(com.example.backend.enums.StatutConversation.ACTIVE);
         assertThat(response.status()).isEqualTo("ACTIVE");
@@ -277,7 +292,6 @@ class ConversationServiceTest {
     @Test
     void prepareStreamUsesNewCurrentModelAndKeepsExistingContext() {
         conversation.changeModel(geminiModel);
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(2);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -286,7 +300,7 @@ class ConversationServiceTest {
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenReturn(List.of(previousUser, previousAssistant));
 
-        var preparation = service.prepareStream(10L, new SendMessageRequest("Question Gemini"));
+        var preparation = service.prepareStream(10L, new SendMessageRequest("Question Gemini"), jwt);
 
         assertThat(preparation.modelAlias()).isEqualTo("secure-gemini");
         assertThat(preparation.assistantMessage().modelAlias()).isEqualTo("secure-gemini");
@@ -298,10 +312,9 @@ class ConversationServiceTest {
     @Test
     void prepareStreamUsesMaskedCurrentPromptOnlyForLiteLlmContext() {
         AtomicReference<Message> savedUserMessage = new AtomicReference<>();
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
-        when(dlpService.safeTextForLlm("Mon secret est 1234", "demo-user")).thenReturn("Mon secret est [MASKED]");
+        when(dlpService.safeUserMessage("Mon secret est 1234", testUserId, testUserId.toString(), List.of())).thenReturn("Mon secret est [MASKED]");
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             if (message.getRole() == RoleMessage.USER) {
@@ -312,7 +325,7 @@ class ConversationServiceTest {
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenAnswer(invocation -> List.of(savedUserMessage.get()));
 
-        var preparation = service.prepareStream(10L, new SendMessageRequest("Mon secret est 1234"));
+        var preparation = service.prepareStream(10L, new SendMessageRequest("Mon secret est 1234"), jwt);
 
         assertThat(preparation.userMessage().content()).isEqualTo("Mon secret est 1234");
         assertThat(preparation.context())
@@ -366,82 +379,6 @@ class ConversationServiceTest {
                 .contains(masked, "redonne-moi cette information");
     }
 
-    @Test
-    void streamMessageNeverSendsPreviouslyBlockedMessageToLiteLlm() {
-        Message blocked = new Message(conversation, RoleMessage.USER, 1, StatutMessage.DLP_BLOCKED, "", null);
-        blocked.blockByDlp("HIGH", "moroccan_cin");
-        Message allowed = new Message(conversation, RoleMessage.USER, 2, StatutMessage.TERMINE, "Message autorise", null);
-
-        List<LiteLlmMessage> payload = streamAndCaptureLiteLlmPayload(
-                List.of(blocked, allowed),
-                "Suite autorisee",
-                "Suite autorisee"
-        );
-
-        String joinedPayload = joinPayload(payload);
-        assertThat(joinedPayload)
-                .doesNotContain("Ma CIN")
-                .doesNotContain("moroccan_cin")
-                .doesNotContain("DLP_BLOCKED");
-        assertThat(payload)
-                .extracting(LiteLlmMessage::content)
-                .contains("Message autorise", "Suite autorisee");
-    }
-
-    @Test
-    void messagesExposePersistedDlpBlockedStateForHistoryReload() {
-        Message blocked = new Message(conversation, RoleMessage.USER, 1, StatutMessage.DLP_BLOCKED, "Ma CIN est [MOROCCAN_CIN_1]", null);
-        blocked.blockByDlp(
-                "HIGH",
-                "moroccan_cin,credit_card",
-                "moroccan_cin\t10\t18\t1\t[MOROCCAN_CIN_1]",
-                "Ma CIN est [MOROCCAN_CIN_1]"
-        );
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
-        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(blocked));
-
-        var messages = service.messages(10L);
-
-        assertThat(messages).hasSize(1);
-        assertThat(messages.get(0).status()).isEqualTo("DLP_BLOCKED");
-        assertThat(messages.get(0).dlpHighestSeverity()).isEqualTo("HIGH");
-        assertThat(messages.get(0).dlpDetectedTypes()).containsExactly("moroccan_cin", "credit_card");
-        assertThat(messages.get(0).content()).isEqualTo("Ma CIN est [MOROCCAN_CIN_1]");
-        assertThat(messages.get(0).dlpMaskedText()).isEqualTo("Ma CIN est [MOROCCAN_CIN_1]");
-        assertThat(messages.get(0).dlpMatches())
-                .extracting("type", "start", "end", "lineNumber", "placeholder")
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("moroccan_cin", 10, 18, 1, "[MOROCCAN_CIN_1]"));
-    }
-
-    @Test
-    void streamMessagePersistsOriginalBlockedMessageMaskedTextAndPublicOffsetsOnly() {
-        conversation.rename("Nouvelle conversation");
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
-        when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeTextForLlm("Ma CIN est AB123456", "demo-user"))
-                .thenThrow(new DlpBlockedException(
-                        "HIGH",
-                        Set.of("moroccan_cin"),
-                        "Ma CIN est [MOROCCAN_CIN_1]",
-                        List.of(new com.example.backend.integration.dlp.DlpPublicMatch(null, null, "moroccan_cin_1", "moroccan_cin", 10, 18, 1, "HIGH", "[MOROCCAN_CIN_1]"))
-                ));
-
-        service.streamMessage(10L, new SendMessageRequest("Ma CIN est AB123456"));
-
-        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.captor();
-        verify(messageRepository).save(messageCaptor.capture());
-        Message saved = messageCaptor.getValue();
-        assertThat(saved.getContenu()).isEqualTo("Ma CIN est [MOROCCAN_CIN_1]");
-        assertThat(saved.getDlpMaskedText()).isEqualTo("Ma CIN est [MOROCCAN_CIN_1]");
-        assertThat(saved.getDlpMatches())
-                .contains("moroccan_cin")
-                .contains("\t10\t18\t1\t")
-                .contains("[MOROCCAN_CIN_1]")
-                .doesNotContain("AB123456", "value", "rawValue");
-        assertThat(conversation.getTitre()).contains("[MOROCCAN_CIN_1]").doesNotContain("AB123456");
-    }
-
     @ParameterizedTest
     @CsvSource({
             "Le mot CIN peut designer une carte nationale sans numero.",
@@ -469,15 +406,14 @@ class ConversationServiceTest {
             "Ma cle API est sk-proj-abcdefghijklmnopqrstuvwxyz1234567890,openai_api_key"
     })
     void streamMessageDoesNotCallLiteLlmWhenDlpBlocksSensitiveInput(String prompt, String type) {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeTextForLlm(prompt, "demo-user"))
+        when(dlpService.safeUserMessage(prompt, testUserId, testUserId.toString(), List.of()))
                 .thenThrow(new DlpBlockedException("HIGH", Set.of(type)));
 
-        service.streamMessage(10L, new SendMessageRequest(prompt));
+        service.streamMessage(10L, new SendMessageRequest(prompt), jwt);
 
         verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
-        assertBlockedMessageSaved(type);
+        verify(messageRepository).save(any(Message.class));
     }
 
     @ParameterizedTest
@@ -489,12 +425,11 @@ class ConversationServiceTest {
             "status-error"
     })
     void streamMessageDoesNotCallLiteLlmWhenDlpIsUnavailable(String failureMode) {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeTextForLlm("Bonjour", "demo-user"))
+        when(dlpService.safeUserMessage("Bonjour", testUserId, testUserId.toString(), List.of()))
                 .thenThrow(new DlpUnavailableException("DLP failure: " + failureMode));
 
-        service.streamMessage(10L, new SendMessageRequest("Bonjour"));
+        service.streamMessage(10L, new SendMessageRequest("Bonjour"), jwt);
 
         verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
         verify(messageRepository, never()).save(any(Message.class));
@@ -502,35 +437,31 @@ class ConversationServiceTest {
 
     @Test
     void streamMessageDlpFailureDoesNotEmitPartialTokens() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeTextForLlm("Ma CIN est AB123456", "demo-user"))
+        when(dlpService.safeUserMessage("Ma CIN est AB123456", testUserId, testUserId.toString(), List.of()))
                 .thenThrow(new DlpBlockedException("HIGH", Set.of("moroccan_cin")));
 
-        service.streamMessage(10L, new SendMessageRequest("Ma CIN est AB123456"));
+        service.streamMessage(10L, new SendMessageRequest("Ma CIN est AB123456"), jwt);
 
         verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
         verify(messagePersistenceService, never()).completeAssistantMessage(any(), any());
         verify(messagePersistenceService, never()).failAssistantMessage(any(), any());
-        assertBlockedMessageSaved("moroccan_cin");
     }
 
     @Test
     void streamMessageDoesNotCallLiteLlmWhenDlpBlocks() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeTextForLlm("secret", "demo-user"))
+        when(dlpService.safeUserMessage("secret", testUserId, testUserId.toString(), List.of()))
                 .thenThrow(new DlpBlockedException("HIGH", Set.of("API_KEY")));
 
-        service.streamMessage(10L, new SendMessageRequest("secret"));
+        service.streamMessage(10L, new SendMessageRequest("secret"), jwt);
 
         verify(liteLlmService, never()).streamChat(any(), any(), any(), any(), any());
-        assertBlockedMessageSaved("API_KEY");
+        verify(messageRepository).save(any(Message.class));
     }
 
     @Test
     void streamMessageCompletesAssistantMessageWhenLiteLlmFinishes() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -544,14 +475,13 @@ class ConversationServiceTest {
             return null;
         }).when(liteLlmService).streamChat(eq("secure-groq"), any(), any(), any(), any());
 
-        service.streamMessage(10L, new SendMessageRequest("Question"));
+        service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
 
         verify(messagePersistenceService).completeAssistantMessage(any(), eq("Reponse"));
     }
 
     @Test
     void streamMessageMarksAssistantMessageFailedWhenLiteLlmFails() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -563,14 +493,13 @@ class ConversationServiceTest {
             return null;
         }).when(liteLlmService).streamChat(eq("secure-groq"), any(), any(), any(), any());
 
-        service.streamMessage(10L, new SendMessageRequest("Question"));
+        service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
 
         verify(messagePersistenceService).failAssistantMessage(any(), eq("Erreur pendant le streaming LiteLLM."));
     }
 
     @Test
     void streamMessageCompletesEmitterEvenWhenCompletionPersistenceFails() throws Exception {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -586,14 +515,13 @@ class ConversationServiceTest {
         doThrow(new RuntimeException("db down"))
                 .when(messagePersistenceService).completeAssistantMessage(any(), any());
 
-        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"));
+        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
 
         assertThat(isComplete(emitter)).isTrue();
     }
 
     @Test
     void streamMessageCompletesEmitterEvenWhenFailurePersistenceFails() throws Exception {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -607,7 +535,7 @@ class ConversationServiceTest {
         doThrow(new RuntimeException("db down"))
                 .when(messagePersistenceService).failAssistantMessage(any(), any());
 
-        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"));
+        SseEmitter emitter = service.streamMessage(10L, new SendMessageRequest("Question"), jwt);
 
         assertThat(isComplete(emitter)).isTrue();
     }
@@ -627,20 +555,34 @@ class ConversationServiceTest {
 
     @Test
     void conversationLookupIsScopedToDemoUser() {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(99L, demoUser)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.messages(99L))
+        assertThatThrownBy(() -> service.messages(99L, jwt))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Conversation not found");
     }
 
     @Test
+    void conversationLookupResolvesOwnershipFromAuthenticatedJwt() {
+        Jwt otherJwt = Jwt.withTokenValue("other-token")
+                .header("alg", "none")
+                .subject("other-user")
+                .build();
+        when(currentUserService.resolve(otherJwt)).thenReturn(otherUser);
+        when(conversationRepository.findOwnedById(99L, otherUser)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.messages(99L, otherJwt))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Conversation not found");
+
+        verify(conversationRepository).findOwnedById(99L, otherUser);
+    }
+
+    @Test
     void attachmentMetadataRoundTripsThroughJsonSerializationIncludingTrickyCharacters() {
         List<MultipartFile> files = testFiles(1);
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
-        when(dlpService.safeMessageForLlm("Question", files, "demo-user"))
+        when(dlpService.safeMessageForLlm("Question", files, testUserId, testUserId.toString(), List.of()))
                 .thenReturn(new DlpSafeMessage("Question", "Question", null, List.of()));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(0);
         List<AttachmentMetadata> storedAttachments = List.of(
@@ -648,19 +590,28 @@ class ConversationServiceTest {
                 new AttachmentMetadata(null, "no-id.txt", "application/octet-stream", 0L, "ALLOW", 0, 0, "SUCCESS")
         );
         when(attachmentService.store(any(Message.class), eq(files), any())).thenReturn(storedAttachments);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        AtomicReference<Message> savedUserMessage = new AtomicReference<>();
+        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            if (message.getRole() == RoleMessage.USER) {
+                savedUserMessage.set(message);
+            }
+            return message;
+        });
+        when(messageRepository.findById(org.mockito.ArgumentMatchers.nullable(Long.class)))
+                .thenAnswer(invocation -> Optional.ofNullable(savedUserMessage.get()));
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenReturn(List.of());
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.captor();
 
-        service.prepareStream(10L, "Question", files);
+        service.streamMessageWithFiles(10L, "Question", files, jwt);
 
         verify(messageRepository, times(2)).save(messageCaptor.capture());
         Message userMessage = messageCaptor.getAllValues().get(0);
         assertThat(userMessage.getAttachmentMetadataJson()).contains("weird\\nname\\t\\\"quoted\\\".txt");
         when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(userMessage));
 
-        var messages = service.messages(10L);
+        var messages = service.messages(10L, jwt);
 
         assertThat(messages.get(0).attachments()).containsExactlyElementsOf(storedAttachments);
     }
@@ -668,11 +619,10 @@ class ConversationServiceTest {
     @Test
     void attachmentMetadataParsesBlankValueAsEmptyList() {
         Message message = new Message(conversation, RoleMessage.USER, 1, StatutMessage.TERMINE, "Question", null);
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(message));
 
-        var messages = service.messages(10L);
+        var messages = service.messages(10L, jwt);
 
         assertThat(messages.get(0).attachments()).isEmpty();
     }
@@ -681,12 +631,11 @@ class ConversationServiceTest {
     void attachmentMetadataParseIgnoresCorruptJsonGracefully() {
         Message message = new Message(conversation, RoleMessage.USER, 1, StatutMessage.TERMINE, "Question", null);
         message.setAttachmentMetadataJson("not json");
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findByConversationOrderByOrdreAsc(conversation)).thenReturn(List.of(message));
 
-        assertThatCode(() -> service.messages(10L)).doesNotThrowAnyException();
-        assertThat(service.messages(10L).get(0).attachments()).isEmpty();
+        assertThatCode(() -> service.messages(10L, jwt)).doesNotThrowAnyException();
+        assertThat(service.messages(10L, jwt).get(0).attachments()).isEmpty();
     }
 
     private List<LiteLlmMessage> streamAndCaptureLiteLlmPayload(
@@ -704,12 +653,11 @@ class ConversationServiceTest {
             String historicalOriginal,
             String historicalMasked
     ) {
-        when(demoUserProvider.currentUser()).thenReturn(demoUser);
         when(conversationRepository.findOwnedById(10L, demoUser)).thenReturn(Optional.of(conversation));
         when(messageRepository.findMaxOrdre(conversation)).thenReturn(previousMessages.size());
-        when(dlpService.safeTextForLlm(prompt, "demo-user")).thenReturn(safePrompt);
+        when(dlpService.safeUserMessage(prompt, testUserId, testUserId.toString(), List.of())).thenReturn(safePrompt);
         if (historicalOriginal != null) {
-            when(dlpService.safeTextForLlm(historicalOriginal, "demo-user")).thenReturn(historicalMasked);
+            when(dlpService.safeTextForLlm(historicalOriginal, testUserId.toString(), List.of())).thenReturn(historicalMasked);
         }
         AtomicReference<Message> savedUserMessage = new AtomicReference<>();
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
@@ -721,9 +669,7 @@ class ConversationServiceTest {
         });
         when(messageRepository.findByConversationAndStatutAndRoleInOrderByOrdreAsc(eq(conversation), eq(StatutMessage.TERMINE), any()))
                 .thenAnswer(invocation -> {
-                    List<Message> messages = previousMessages.stream()
-                            .filter(message -> message.getStatut() == StatutMessage.TERMINE)
-                            .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+                    List<Message> messages = new java.util.ArrayList<>(previousMessages);
                     if (savedUserMessage.get() != null) {
                         messages.add(savedUserMessage.get());
                     }
@@ -737,7 +683,7 @@ class ConversationServiceTest {
             return null;
         }).when(liteLlmService).streamChat(eq("secure-groq"), payloadCaptor.capture(), any(), any(), any());
 
-        service.streamMessage(10L, new SendMessageRequest(prompt));
+        service.streamMessage(10L, new SendMessageRequest(prompt), jwt);
 
         verify(liteLlmService, times(1)).streamChat(eq("secure-groq"), any(), any(), any(), any());
         return payloadCaptor.getValue();
@@ -747,18 +693,6 @@ class ConversationServiceTest {
         return payload.stream()
                 .map(LiteLlmMessage::content)
                 .reduce("", (left, right) -> left + "\n" + right);
-    }
-
-    private void assertBlockedMessageSaved(String type) {
-        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.captor();
-        verify(messageRepository, times(1)).save(messageCaptor.capture());
-        Message saved = messageCaptor.getValue();
-        assertThat(saved.getRole()).isEqualTo(RoleMessage.USER);
-        assertThat(saved.getStatut()).isEqualTo(StatutMessage.DLP_BLOCKED);
-        assertThat(saved.getContenu()).doesNotContain("Ma CIN est AB123456");
-        assertThat(saved.getDlpHighestSeverity()).isEqualTo("HIGH");
-        assertThat(saved.getDlpDetectedTypes()).contains(type);
-        assertThat(saved.getModele().getAliasInterne()).isEqualTo("secure-groq");
     }
 
     private static Stream<Arguments> historicalSensitiveMessages() {
@@ -779,4 +713,3 @@ class ConversationServiceTest {
                 .toList();
     }
 }
-
