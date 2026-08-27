@@ -1,10 +1,10 @@
-import { useContext } from 'react'
-import { AuthContext } from '../../AuthProvider'
+import { useContext, useState } from 'react'
 import { getInitials } from '../../utils/authUtils'
-import { Icon } from '../admin/AdminComponents'
-import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
+import { AuthContext } from '../../AuthProvider'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
+import { Icon } from '../admin/AdminComponents'
+import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
 
 export default function Sidebar({
   activeConversation,
@@ -49,8 +49,15 @@ export default function Sidebar({
   toggleSidebar,
 }) {
   const keycloak = useContext(AuthContext)
-  const displayName = keycloak?.tokenParsed?.name || keycloak?.tokenParsed?.preferred_username || 'Utilisateur'
+  const [isSidebarOpening, setIsSidebarOpening] = useState(false)
+  const displayName =
+    keycloak?.tokenParsed?.name ||
+    keycloak?.tokenParsed?.preferred_username ||
+    'Utilisateur'
   const initials = getInitials(displayName)
+
+  // Keep the same sidebar shell mounted and only switch its navigation content.
+  // This is what allows the chat navigation to visually transition into admin navigation.
   const isAdminMode = Boolean(admin?.showAdminDashboard)
 
   const historyListProps = {
@@ -89,9 +96,14 @@ export default function Sidebar({
 
       <aside
         aria-hidden={isBackgrounded || undefined}
-        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isBackgrounded ? 'is-backgrounded' : ''}`.trim()}
+        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isBackgrounded ? 'is-backgrounded' : ''} ${isSidebarOpening ? 'sidebar-opening' : ''}`.trim()}
         aria-label="Navigation Synapse"
         data-menu-root
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && event.propertyName === 'width') {
+            setIsSidebarOpening(false)
+          }
+        }}
       >
         <div className="sidebar-header">
           <button
@@ -101,6 +113,7 @@ export default function Sidebar({
             onClick={() => {
               if (!isSidebarOpen) {
                 closeSidebarPanels()
+                setIsSidebarOpening(true)
                 setIsSidebarOpen(true)
               }
             }}
@@ -114,7 +127,6 @@ export default function Sidebar({
           <button
             className="sidebar-toggle"
             type="button"
-            title={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'}
             aria-label={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'}
             aria-expanded={isSidebarOpen}
             onClick={toggleSidebar}
@@ -124,6 +136,7 @@ export default function Sidebar({
         </div>
 
         <div className="sidebar-navigation-switch">
+
           <div className="sidebar-chat-nav">
             <nav className="sidebar-navigation" aria-label="Actions principales">
               <div className="sidebar-primary-nav">
@@ -131,13 +144,18 @@ export default function Sidebar({
                   type="button"
                   title="Nouvelle conversation"
                   aria-label="Nouvelle conversation"
-                  onClick={() => { closeAdminDashboard(); closeSidebarPanels(); newConversation() }}
+                  onClick={() => {
+                    closeAdminDashboard()
+                    closeSidebarPanels()
+                    newConversation()
+                  }}
                 >
                   <span className="sidebar-icon" aria-hidden="true">
                     <img src="/assets/new-tab.png" alt="" />
                   </span>
                   <span>Nouvelle conversation</span>
                 </button>
+
                 <button
                   className={isSearchModalOpen ? 'active' : ''}
                   type="button"
@@ -145,13 +163,8 @@ export default function Sidebar({
                   aria-label="Rechercher"
                   onClick={() => {
                     setIsSearchModalOpen(true)
-                    if (isSidebarOpen) {
-                      setIsAccountMenuOpen(false)
-                      setActiveView('chat')
-                      setCollapsedPanel(null)
-                    } else {
-                      setCollapsedPanel(null)
-                    }
+                    setIsAccountMenuOpen(false)
+                    setCollapsedPanel(null)
                   }}
                 >
                   <span className="sidebar-icon" aria-hidden="true">
@@ -159,6 +172,7 @@ export default function Sidebar({
                   </span>
                   <span>Rechercher</span>
                 </button>
+
                 <button
                   className={isModelsView ? 'active' : ''}
                   type="button"
@@ -168,7 +182,9 @@ export default function Sidebar({
                     closeAdminDashboard()
                     closeTransientMenus()
                     setIsAccountMenuOpen(false)
-                    setActiveView((current) => (current === 'models' ? 'chat' : 'models'))
+                    setActiveView((current) =>
+                      current === 'models' ? 'chat' : 'models'
+                    )
                   }}
                 >
                   <span className="sidebar-icon" aria-hidden="true">
@@ -177,14 +193,18 @@ export default function Sidebar({
                   <span>Explorer les modèles</span>
                 </button>
               </div>
+
               <button
-                className={`recent-nav-button ${collapsedPanel === 'history' ? 'active' : ''}`}
+                className={`recent-nav-button ${
+                  collapsedPanel === 'history' ? 'active' : ''
+                }`}
                 type="button"
                 title="Discussions récentes"
                 aria-label="Discussions récentes"
                 onClick={() => {
                   closeAdminDashboard()
                   setShowArchived(false)
+
                   if (isSidebarOpen) {
                     setIsAccountMenuOpen(false)
                     setActiveView('chat')
@@ -211,19 +231,37 @@ export default function Sidebar({
             <section className="recent-section">
               <div className="history-heading">
                 <span>Récents</span>
+
                 <button
                   type="button"
                   className="archive-toggle"
-                  title={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
-                  aria-label={showTabs ? 'Masquer les filtres archivés' : 'Afficher les filtres archivés'}
+                  title={
+                    showTabs
+                      ? 'Masquer les filtres archivés'
+                      : 'Afficher les filtres archivés'
+                  }
+                  aria-label={
+                    showTabs
+                      ? 'Masquer les filtres archivés'
+                      : 'Afficher les filtres archivés'
+                  }
                   aria-expanded={showTabs}
                   onClick={() => setShowTabs(!showTabs)}
                 >
-                  <img src="/assets/archive.png" alt="" aria-hidden="true" />
+                  <img
+                    src="/assets/archive.png"
+                    alt=""
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
 
-              {showTabs && <ArchiveTabs showArchived={showArchived} setShowArchived={setShowArchived} />}
+              {showTabs && (
+                <ArchiveTabs
+                  showArchived={showArchived}
+                  setShowArchived={setShowArchived}
+                />
+              )}
 
               <ConversationList
                 {...historyListProps}
@@ -254,6 +292,7 @@ export default function Sidebar({
               </nav>
             </div>
           )}
+
         </div>
 
         {admin?.isAdmin && (
@@ -276,14 +315,18 @@ export default function Sidebar({
           </nav>
         )}
 
-        <div className="sidebar-user" data-menu-root>
+        <div className={`sidebar-user ${isSidebarOpen && isAccountMenuOpen ? 'account-menu-open' : ''}`} data-menu-root>
           <button
             type="button"
             title="Compte"
             aria-label="Compte"
             onClick={() => {
+              if (isAccountMenuOpen) {
+                setIsAccountMenuOpen(false)
+                return
+              }
               closeTransientMenus()
-              setIsAccountMenuOpen((current) => !current)
+              setIsAccountMenuOpen(true)
             }}
           >
             <span className="user-avatar-wrapper">
@@ -330,7 +373,11 @@ function AccountPopover({ className = 'account-popover-open' }) {
 
   return (
     <div className={`account-popover ${className}`} role="menu" data-menu-root>
-      <button type="button" role="menuitem" onClick={() => keycloak?.logout({ redirectUri: window.location.origin })}>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => keycloak?.logout({ redirectUri: window.location.origin })}
+      >
         Se déconnecter
       </button>
     </div>

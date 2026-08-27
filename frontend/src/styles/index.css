@@ -113,3 +113,144 @@
   width: 0;
   height: 0;
 }
+
+/* Borderless surface system
+   Keep geometry/focus borders used to draw icons or communicate keyboard
+   focus, while replacing visible component outlines and separators with
+   soft elevation. Loaded last so it covers both chat and administration. */
+:root {
+  --surface-shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.025);
+  --surface-shadow-sm: 0 4px 14px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --surface-shadow-md: 0 12px 30px rgba(15, 23, 42, 0.09), 0 2px 8px rgba(15, 23, 42, 0.04);
+  --surface-divider-x: inset -1px 0 rgba(15, 23, 42, 0.055);
+  --surface-divider-y: inset 0 -1px rgba(15, 23, 42, 0.055);
+}
+
+/* Application shells and section dividers */
+.sidebar,
+.admin-sidebar {
+  border-right: 0;
+  box-shadow: var(--surface-divider-x), 8px 0 24px rgba(15, 23, 42, 0.025);
+}
+
+.sidebar-primary-nav,
+.sidebar-admin-navigation,
+.sidebar-user,
+.admin-account {
+  border-color: transparent;
+}
+
+.sidebar-primary-nav,
+.sidebar-admin-navigation,
+.sidebar-user,
+.admin-account {
+  box-shadow: inset 0 1px rgba(15, 23, 42, 0.045);
+}
+
+.sidebar-primary-nav {
+  box-shadow: var(--surface-divider-y);
+}
+
+/* Primary cards and elevated containers */
+.composer,
+.model-gallery,
+.model-card,
+.search-modal,
+.confirm-modal,
+.account-popover,
+.history-popover,
+.menu-popover,
+.collapsed-panel,
+.document-inspector,
+.document-inspector-panel,
+.admin-card,
+.admin-stat-card,
+.admin-model-row,
+.admin-modal,
+.admin-toast {
+  border: 0;
+  box-shadow: var(--surface-shadow-md);
+}
+
+.model-card,
+.admin-stat-card,
+.admin-model-row {
+  box-shadow: var(--surface-shadow-sm);
+}
+
+/* Inputs, selectors, pills and compact controls */
+.custom-dropdown-trigger,
+.model-filter-dropdown,
+.search-line,
+.advanced-filters,
+.attachment-chip,
+.admin-search-field,
+.admin-input,
+.inline-add-form input,
+.inline-add-form select,
+.admin-field input,
+.admin-field select,
+.admin-field textarea,
+.role-selector,
+.audit-view-switch,
+.role-check,
+.restriction-chip,
+.admin-pagination button,
+.admin-back-chat,
+.admin-button.secondary {
+  border: 0;
+  box-shadow: var(--surface-shadow-xs);
+}
+
+.search-modal-input,
+.search-modal-input:focus,
+.search-modal-input:focus-visible {
+  border: 0 !important;
+  box-shadow: var(--surface-divider-y);
+}
+
+.composer:focus-within,
+.admin-search-field:focus-within,
+.admin-field input:focus,
+.admin-field select:focus,
+.admin-field textarea:focus {
+  border-color: transparent !important;
+}
+
+/* Floating controls */
+.go-bottom-button,
+.document-inspector-close,
+.document-text-size-popover,
+.document-threat-filter,
+.popover-top {
+  border: 0;
+  box-shadow: var(--surface-shadow-sm);
+}
+
+/* Message and security surfaces retain their semantic color as a glow. */
+.dlp-alert,
+.dlp-blocked-attachment,
+.message-error,
+.document-threat-card,
+.document-warning,
+.document-success {
+  border: 0;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.document-detected-page,
+.document-secure-page,
+.document-secure-placeholder,
+.document-threat-summary,
+.document-inspector-title span,
+.document-docx-preview td,
+.document-docx-preview th {
+  border: 0;
+  box-shadow: var(--surface-shadow-xs);
+}
+
+.dlp-alert,
+.message-error,
+.document-warning {
+  box-shadow: 0 5px 16px rgba(185, 28, 28, 0.09), 0 0 0 1px rgba(185, 28, 28, 0.08);
+}

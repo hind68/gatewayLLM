@@ -164,7 +164,9 @@ function DlpBlockedMessage({ alertCopied, copied, message, onCopyAlert, onCopySa
   const [activeTab, setActiveTab] = useState('safe')
   const [showAllAttachments, setShowAllAttachments] = useState(false)
   const matches = useMemo(() => message.dlpMatches || [], [message.dlpMatches])
-  const attachments = useMemo(() => (Array.isArray(message.attachments) ? message.attachments : []), [message.attachments])
+  const attachments = useMemo(() => (
+    Array.isArray(message.attachments) ? message.attachments : []
+  ), [message.attachments])
   const blockedAttachments = useMemo(() => attachments.filter((attachment) => hasDlpAttachmentSignal(attachment, matches, attachments.length)), [attachments, matches])
   const hasDlpFiles = blockedAttachments.length > 0
   const hiddenAttachmentCount = Math.max(blockedAttachments.length - COLLAPSED_ATTACHMENT_COUNT, 0)

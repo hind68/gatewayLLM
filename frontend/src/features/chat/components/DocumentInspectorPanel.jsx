@@ -506,6 +506,7 @@ function DetectionIndex({ matches, selectedMatchId, text, onSelect }) {
       <button
         type="button"
         aria-label={`${displaySeverity(match.severity)} ${displayTypeFr(match.type)} ${fullLineLabel}`}
+        aria-pressed={selectedMatchId === id}
         className={`document-threat-pill severity-${severity} ${selectedMatchId === id ? 'is-active' : ''}`}
         key={`${id}-${index}`}
         data-target-match-id={id}
@@ -601,6 +602,7 @@ function renderHighlightedParts(parts, selectedMatchId, onSelect) {
     const id = matchKey(part.match)
     return (
       <mark
+        aria-pressed={selectedMatchId === id}
         className={`document-dlp-mark severity-${severityClass(part.match)} ${selectedMatchId === id ? 'is-selected' : ''}`}
         data-match-id={id}
         key={index}

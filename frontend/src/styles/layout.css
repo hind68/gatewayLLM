@@ -18,6 +18,11 @@
   transition: margin-left 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.chat-workspace.is-search-covered {
+  pointer-events: none;
+  user-select: none;
+}
+
 .chat-main {
   position: relative;
   flex: 1;

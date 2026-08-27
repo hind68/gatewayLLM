@@ -1,24 +1,55 @@
+import { useEffect, useState } from 'react'
+import { fetchConversations } from '../../../api/conversationsApi'
 import ModelFilterDropdown from '../../models/components/ModelFilterDropdown'
 import ArchiveTabs from './ArchiveTabs'
 import { cleanModelName, displayConversationTitle } from '../../../utils/modelMetadata'
 
 export default function SearchModal({
-  conversations,
   inputRef,
-  isLoadingHistory,
-  modelFilter,
   models,
   onClose,
   openConversation,
-  search,
-  setModelFilter,
-  setSearch,
-  setShowArchived,
-  showArchived,
 }) {
-  const visibleConversations = modelFilter
-    ? conversations.filter((conversation) => conversation.modelAlias === modelFilter)
-    : conversations
+  const [search, setSearch] = useState('')
+  const [modelFilter, setModelFilter] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const [searchConversations, setSearchConversations] = useState([])
+  const [isLoadingResults, setIsLoadingResults] = useState(true)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+
+    queueMicrotask(() => {
+      if (cancelled) return
+      setIsLoadingResults(true)
+      setLoadError('')
+    })
+
+    fetchConversations({ modelFilter, search, showArchived })
+      .then((data) => {
+        if (cancelled) return
+        const content = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.content)
+            ? data.content
+            : []
+        setSearchConversations(content)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSearchConversations([])
+          setLoadError('Impossible de charger les conversations.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingResults(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [modelFilter, search, showArchived])
 
   return (
     <div className="modal-overlay search-modal-overlay" role="presentation" onMouseDown={onClose}>
@@ -50,11 +81,14 @@ export default function SearchModal({
           <ModelFilterDropdown modelFilter={modelFilter} models={models} setModelFilter={setModelFilter} />
         </div>
         <div className="search-results" role="listbox" aria-label="Résultats de recherche">
-          {isLoadingHistory && <div className="search-result-empty">Recherche...</div>}
-          {!isLoadingHistory && visibleConversations.length === 0 && (
+          {isLoadingResults && <div className="search-result-empty">Recherche...</div>}
+          {!isLoadingResults && loadError && (
+            <div className="search-result-empty">{loadError}</div>
+          )}
+          {!isLoadingResults && !loadError && searchConversations.length === 0 && (
             <div className="search-result-empty">Aucune conversation trouvée</div>
           )}
-          {!isLoadingHistory && visibleConversations.map((conversation) => (
+          {!isLoadingResults && !loadError && searchConversations.map((conversation) => (
             <button
               key={conversation.id}
               type="button"

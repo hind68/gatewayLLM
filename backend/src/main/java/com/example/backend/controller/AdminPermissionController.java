@@ -135,7 +135,6 @@ public class AdminPermissionController {
         userBannedWordRepo.deleteById(id);
         auditLogRepository.save(new AuditLog("DELETE", "UserBannedWord", String.valueOf(id), adminId));
     }
-
     private void requireExistingUser(UUID userKeycloakId) {
         if (utilisateurRepository.findByExternalId(userKeycloakId.toString()).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userKeycloakId);
