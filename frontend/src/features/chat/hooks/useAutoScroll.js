@@ -38,6 +38,25 @@ export default function useAutoScroll(messages) {
     setIsLastBlockVisible(isNearBottom)
   }, [])
 
+  useEffect(() => {
+    const root = messagesRef.current
+    const anchor = bottomRef.current
+    if (!root || !anchor || typeof IntersectionObserver === 'undefined') return undefined
+
+    const observer = new IntersectionObserver(([entry]) => {
+      const isNearBottom = entry.isIntersecting
+      shouldAutoScrollRef.current = isNearBottom
+      setIsLastBlockVisible(isNearBottom)
+    }, {
+      root,
+      rootMargin: '0px 0px 90px 0px',
+      threshold: 0,
+    })
+
+    observer.observe(anchor)
+    return () => observer.disconnect()
+  }, [])
+
   const goToBottom = useCallback(() => {
     setIsLastBlockVisible(true)
     shouldAutoScrollRef.current = true

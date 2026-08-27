@@ -202,9 +202,19 @@ export default function AppLayout({
         />
       )}
 
+      {layout.isModelsView && (
+        <ModelGallery
+          disabled={status.isGenerating}
+          isLoading={models.isLoadingModels}
+          models={models.models}
+          onClose={() => layout.setActiveView('chat')}
+          onSelect={actions.selectModel}
+        />
+      )}
+
       <div
-        aria-hidden={layout.isSearchModalOpen || undefined}
-        className={`chat-workspace ${layout.isSearchModalOpen ? 'is-search-covered' : ''}`}
+        aria-hidden={layout.isSearchModalOpen || layout.isModelsView || undefined}
+        className={`chat-workspace ${layout.isSearchModalOpen || layout.isModelsView ? 'is-search-covered' : ''}`}
       >
       <main
         className={`chat-main ${
@@ -215,7 +225,6 @@ export default function AppLayout({
               : 'welcome-mode'
         } ${isDraggingFiles ? 'is-dragging-files' : ''} ${isOverlayOpen ? 'is-backgrounded' : ''}`}
         style={{
-          ...(chat.goBottomTop == null ? {} : { '--go-bottom-top': `${chat.goBottomTop}px` }),
           ...(chat.composerHeight == null ? {} : { '--composer-height': `${chat.composerHeight}px` }),
         }}
         onDragEnter={handleDragEnter}
@@ -276,22 +285,12 @@ export default function AppLayout({
           />
         ) : (
           <>
-        {layout.isModelsView && (
-          <ModelGallery
-            disabled={status.isGenerating}
-            isLoading={models.isLoadingModels}
-            models={models.models}
-            onClose={() => layout.setActiveView('chat')}
-            onSelect={actions.selectModel}
-          />
-        )}
-
         <ChatThread
           activeModelAlias={models.activeModelAlias}
           activeModelName={models.activeModel?.displayName || models.modelDisplayName(models.activeModelAlias)}
           bottomRef={chat.bottomRef}
+          composerHeight={chat.composerHeight}
           copiedKey={chat.copiedKey}
-          goBottomTop={chat.goBottomTop}
           goToBottom={chat.goToBottom}
           hasActiveMessages={chat.hasActiveMessages}
           isComposerTransitioning={chat.isComposerTransitioning}

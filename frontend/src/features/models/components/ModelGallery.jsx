@@ -7,6 +7,8 @@ export default function ModelGallery({ disabled, isLoading, models, onClose, onS
     <div className="modal-overlay model-gallery-overlay" role="presentation" onMouseDown={onClose}>
       <section
         className="model-gallery"
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="model-gallery-title"
         data-menu-root
         onMouseDown={(event) => event.stopPropagation()}

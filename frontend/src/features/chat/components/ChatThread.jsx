@@ -5,8 +5,8 @@ export default function ChatThread({
   activeModelName,
   activeModelAlias,
   bottomRef,
+  composerHeight,
   copiedKey,
-  goBottomTop,
   goToBottom,
   hasActiveMessages,
   isComposerTransitioning,
@@ -22,7 +22,7 @@ export default function ChatThread({
   welcomeComposer,
 }) {
   return (
-    <>
+    <div className="messages-layer">
       <section
         className="messages"
         ref={messagesRef}
@@ -56,11 +56,11 @@ export default function ChatThread({
 
       {hasActiveMessages && (
         <button
-          className={`go-bottom-button ${goBottomTop != null && !isLastBlockVisible ? 'is-visible' : ''} ${isGenerating ? 'is-generating' : ''}`}
+          className={`go-bottom-button ${composerHeight != null && !isLastBlockVisible ? 'is-visible' : ''} ${isGenerating ? 'is-generating' : ''}`}
           type="button"
           aria-label="Défiler vers le bas"
-          aria-hidden={goBottomTop == null || isLastBlockVisible}
-          tabIndex={goBottomTop == null || isLastBlockVisible ? -1 : 0}
+          aria-hidden={composerHeight == null || isLastBlockVisible}
+          tabIndex={composerHeight == null || isLastBlockVisible ? -1 : 0}
           onClick={goToBottom}
         >
           {isGenerating ? (
@@ -74,6 +74,6 @@ export default function ChatThread({
           )}
         </button>
       )}
-    </>
+    </div>
   )
 }

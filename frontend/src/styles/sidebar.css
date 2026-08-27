@@ -288,7 +288,7 @@
 .sidebar-admin-navigation img {
   width: 24px;
   height: 24px;
-  transform: none;
+  transform: translateY(1px);
   transition: none;
 }
 

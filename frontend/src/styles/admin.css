@@ -328,6 +328,19 @@
 
 }
 
+.admin-table td:last-child .security-pattern-delete-button {
+  display: inline-grid;
+  place-items: center;
+  height: 32px;
+  gap: 0;
+  line-height: 0;
+}
+
+.admin-table td:last-child .security-pattern-delete-button svg {
+  display: block;
+  margin: 0;
+}
+
 .admin-shell .admin-text-button:not(.danger) {
 
   border: 1px solid rgba(93, 143, 202, .14);
