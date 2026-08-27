@@ -30,6 +30,17 @@
   view-transition-name: workspace-content;
 }
 
+/* Blur the chat content directly (instead of relying on a modal's own
+   backdrop-filter, which only reaches whatever sits right behind its card)
+   so everything behind a full-screen overlay - header, messages, composer -
+   blurs together, at the same intensity and on the same transition as the
+   sidebar (see .sidebar.is-backgrounded). The overlay/card itself is
+   excluded so it stays sharp. */
+.chat-main.is-backgrounded > *:not(.modal-overlay) {
+  filter: blur(3px);
+  transition: filter 160ms ease;
+}
+
 /* Smoothly morph the chatbot workspace into administration (and back). */
 ::view-transition-group(workspace-content) {
   animation-duration: 460ms;

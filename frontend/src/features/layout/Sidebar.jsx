@@ -8,6 +8,7 @@ import ConversationList from '../conversations/components/ConversationList'
 
 export default function Sidebar({
   activeConversation,
+  isBackgrounded,
   admin,
   archiveConversation,
   closeSidebarPanels,
@@ -86,7 +87,12 @@ export default function Sidebar({
     <>
       {isSidebarOpen && <button className="mobile-overlay" type="button" aria-label="Fermer" onClick={toggleSidebar} />}
 
-      <aside className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'}`} aria-label="Navigation Synapse" data-menu-root>
+      <aside
+        aria-hidden={isBackgrounded || undefined}
+        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isBackgrounded ? 'is-backgrounded' : ''}`.trim()}
+        aria-label="Navigation Synapse"
+        data-menu-root
+      >
         <div className="sidebar-header">
           <button
             className="sidebar-brand"

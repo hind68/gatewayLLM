@@ -22,3 +22,8 @@ build/
 /keycloak/export/
 /keycloak/*-raw.json
 /keycloak/import/*-raw.json
+
+# Generated documentation/diagrams
+/docs/
+
+ AUDIT_MERGE_INTEGRATION.md

@@ -34,6 +34,13 @@
   width: var(--sidebar-closed-width);
 }
 
+.sidebar.is-backgrounded {
+  filter: blur(3px);
+  border-right-color: transparent;
+  pointer-events: none;
+  transition: filter 160ms ease, border-color 160ms ease;
+}
+
 .sidebar-header {
   flex-shrink: 0;
   min-height: 56px;
