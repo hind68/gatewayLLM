@@ -19,7 +19,10 @@ done
   -s loginTheme=synapse \
   -s internationalizationEnabled=true \
   -s defaultLocale=fr \
-  -s 'supportedLocales=["fr"]'
+  -s 'supportedLocales=["fr"]' \
+  -s rememberMe=true \
+  -s ssoSessionIdleTimeoutRememberMe=2592000 \
+  -s ssoSessionMaxLifespanRememberMe=2592000
 
 ensure_role() {
   role_name="$1"
