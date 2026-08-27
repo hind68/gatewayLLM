@@ -277,6 +277,7 @@ export default function AppLayout({
           activeModelName={models.activeModel?.displayName || models.modelDisplayName(models.activeModelAlias)}
           bottomRef={chat.bottomRef}
           copiedKey={chat.copiedKey}
+          goBottomTop={chat.goBottomTop}
           goToBottom={chat.goToBottom}
           hasActiveMessages={chat.hasActiveMessages}
           isComposerTransitioning={chat.isComposerTransitioning}

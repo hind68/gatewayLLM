@@ -79,7 +79,7 @@ export function AdminSidebar({ activeSection, onSectionChange, onBackToChat, key
           </span>
           <span>Synapse</span>
         </button>
-        <button className="admin-sidebar-toggle" type="button" title={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'} aria-label={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'} aria-expanded={isSidebarOpen} onClick={() => setIsSidebarOpen((current) => !current)}>
+        <button className="admin-sidebar-toggle" type="button" aria-label={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'} aria-expanded={isSidebarOpen} onClick={() => setIsSidebarOpen((current) => !current)}>
           <img src="/assets/sidebar.png" alt="" />
         </button>
       </div>

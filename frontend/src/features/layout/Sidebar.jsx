@@ -1,4 +1,4 @@
-import { useContext } from 'react'
+import { useContext, useState } from 'react'
 import { getInitials } from '../../utils/authUtils'
 import { AuthContext } from '../../AuthProvider'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
@@ -48,6 +48,7 @@ export default function Sidebar({
   toggleSidebar,
 }) {
   const keycloak = useContext(AuthContext)
+  const [isSidebarOpening, setIsSidebarOpening] = useState(false)
   const displayName =
     keycloak?.tokenParsed?.name ||
     keycloak?.tokenParsed?.preferred_username ||
@@ -92,7 +93,16 @@ export default function Sidebar({
     <>
       {isSidebarOpen && <button className="mobile-overlay" type="button" aria-label="Fermer" onClick={toggleSidebar} />}
 
-      <aside className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'}`} aria-label="Navigation Synapse" data-menu-root>
+      <aside
+        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isSidebarOpening ? 'sidebar-opening' : ''}`}
+        aria-label="Navigation Synapse"
+        data-menu-root
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget && event.propertyName === 'width') {
+            setIsSidebarOpening(false)
+          }
+        }}
+      >
         <div className="sidebar-header">
           <button
             className="sidebar-brand"
@@ -101,6 +111,7 @@ export default function Sidebar({
             onClick={() => {
               if (!isSidebarOpen) {
                 closeSidebarPanels()
+                setIsSidebarOpening(true)
                 setIsSidebarOpen(true)
               }
             }}
@@ -114,7 +125,6 @@ export default function Sidebar({
           <button
             className="sidebar-toggle"
             type="button"
-            title={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'}
             aria-label={isSidebarOpen ? 'Réduire la sidebar' : 'Ouvrir la sidebar'}
             aria-expanded={isSidebarOpen}
             onClick={toggleSidebar}

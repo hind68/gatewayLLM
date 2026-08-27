@@ -182,8 +182,17 @@ export default function useChatUi({
       const composerRect = composer.getBoundingClientRect()
       const mainRect = chatMain.getBoundingClientRect()
       const nextComposerHeight = Math.ceil(composerRect.height)
-      const nextTop = Math.max(12, Math.round(composerRect.top - mainRect.top - GO_BOTTOM_GAP - GO_BOTTOM_HEIGHT))
       setComposerHeight((current) => (current === nextComposerHeight ? current : nextComposerHeight))
+
+      // During the welcome-to-conversation layout change the composer can be
+      // measured before the grid has placed it at the bottom. Do not publish
+      // the clamped 12px value: that makes the control flash at the top.
+      if (composerRect.top <= mainRect.top + GO_BOTTOM_GAP + GO_BOTTOM_HEIGHT) {
+        setGoBottomTop(null)
+        return
+      }
+
+      const nextTop = Math.round(composerRect.top - mainRect.top - GO_BOTTOM_GAP - GO_BOTTOM_HEIGHT)
       setGoBottomTop((current) => (current === nextTop ? current : nextTop))
     }
 

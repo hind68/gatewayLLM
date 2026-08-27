@@ -6,6 +6,7 @@ export default function ChatThread({
   activeModelAlias,
   bottomRef,
   copiedKey,
+  goBottomTop,
   goToBottom,
   hasActiveMessages,
   isComposerTransitioning,
@@ -55,11 +56,11 @@ export default function ChatThread({
 
       {hasActiveMessages && (
         <button
-          className={`go-bottom-button ${isLastBlockVisible ? '' : 'is-visible'} ${isGenerating ? 'is-generating' : ''}`}
+          className={`go-bottom-button ${goBottomTop != null && !isLastBlockVisible ? 'is-visible' : ''} ${isGenerating ? 'is-generating' : ''}`}
           type="button"
           aria-label="Défiler vers le bas"
-          aria-hidden={isLastBlockVisible}
-          tabIndex={isLastBlockVisible ? -1 : 0}
+          aria-hidden={goBottomTop == null || isLastBlockVisible}
+          tabIndex={goBottomTop == null || isLastBlockVisible ? -1 : 0}
           onClick={goToBottom}
         >
           {isGenerating ? (

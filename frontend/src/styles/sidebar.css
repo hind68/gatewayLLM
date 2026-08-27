@@ -106,6 +106,24 @@
   opacity: 1;
 }
 
+/* Let the collapsed action icon drift out with the expanding sidebar instead
+   of disappearing abruptly underneath the full brand. */
+.sidebar-opening .sidebar-logo-hover {
+  animation: sidebar-logo-hover-exit 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes sidebar-logo-hover-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
 .sidebar-brand span {
   font-size: 20px;
   font-weight: 500;
@@ -127,6 +145,26 @@
   flex: 0 0 32px;
   margin-right: 8px;
   transition: background-color 140ms ease;
+}
+
+/* While the sidebar grows from its collapsed width, the toggle initially
+   occupies the same horizontal space as the collapsed brand icon. Keep it
+   hidden until the width transition has moved it clear of that icon. */
+.sidebar-opening .sidebar-toggle {
+  animation: sidebar-toggle-reveal 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes sidebar-toggle-reveal {
+  0%,
+  60% {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  100% {
+    opacity: 1;
+    visibility: visible;
+  }
 }
 
 .sidebar-toggle:hover {
