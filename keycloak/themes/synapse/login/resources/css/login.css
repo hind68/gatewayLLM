@@ -316,15 +316,7 @@ input[aria-invalid="true"],
 #kc-passwd-update-form .checkbox,
 #kc-passwd-update-form .pf-c-check,
 #kc-passwd-update-form .pf-v5-c-check {
-  margin: 2px 0 18px;
-}
-
-#kc-passwd-update-form input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0 8px 0 0;
-  accent-color: var(--synapse-navy);
-  vertical-align: -3px;
+  display: none;
 }
 
 #kc-passwd-update-form input[type="submit"],
