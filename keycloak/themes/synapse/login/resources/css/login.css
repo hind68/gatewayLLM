@@ -122,9 +122,17 @@ label,
 }
 
 label[for="username"],
-label[for="password"] {
+label[for="password"],
+label[for="password-new"],
+label[for="password-confirm"] {
   display: block;
   margin-bottom: 8px;
+}
+
+.form-group,
+.pf-c-form__group,
+.pf-v5-c-form__group {
+  margin-bottom: 18px;
 }
 
 input[type="text"],
@@ -148,9 +156,9 @@ input:focus,
 }
 
 /* Keep the password visibility button visually inside the password field. */
-.input-group:has(input[name="password"]),
-.pf-c-input-group:has(input[name="password"]),
-.pf-v5-c-input-group:has(input[name="password"]) {
+.input-group:has(input[type="password"]),
+.pf-c-input-group:has(input[type="password"]),
+.pf-v5-c-input-group:has(input[type="password"]) {
   position: relative;
   display: block;
   width: 100%;
@@ -160,15 +168,15 @@ input:focus,
   background: rgba(255, 255, 255, .9);
 }
 
-.input-group:has(input[name="password"]):focus-within,
-.pf-c-input-group:has(input[name="password"]):focus-within,
-.pf-v5-c-input-group:has(input[name="password"]):focus-within {
+.input-group:has(input[type="password"]):focus-within,
+.pf-c-input-group:has(input[type="password"]):focus-within,
+.pf-v5-c-input-group:has(input[type="password"]):focus-within {
   box-shadow: 0 0 0 2px var(--synapse-blue-soft);
 }
 
-.input-group:has(input[name="password"]) input[name="password"],
-.pf-c-input-group:has(input[name="password"]) input[name="password"],
-.pf-v5-c-input-group:has(input[name="password"]) input[name="password"] {
+.input-group:has(input[type="password"]) input[type="password"],
+.pf-c-input-group:has(input[type="password"]) input[type="password"],
+.pf-v5-c-input-group:has(input[type="password"]) input[type="password"] {
   width: 100%;
   min-width: 0;
   padding-right: 50px;
@@ -178,9 +186,9 @@ input:focus,
   box-shadow: none !important;
 }
 
-.input-group:has(input[name="password"]) button,
-.pf-c-input-group:has(input[name="password"]) button,
-.pf-v5-c-input-group:has(input[name="password"]) button {
+.input-group:has(input[type="password"]) button,
+.pf-c-input-group:has(input[type="password"]) button,
+.pf-v5-c-input-group:has(input[type="password"]) button {
   position: absolute;
   top: 50%;
   right: 5px;
@@ -201,28 +209,29 @@ input:focus,
   transform: translateY(-50%);
 }
 
-.input-group:has(input[name="password"]) button:hover,
-.pf-c-input-group:has(input[name="password"]) button:hover,
-.pf-v5-c-input-group:has(input[name="password"]) button:hover {
+.input-group:has(input[type="password"]) button:hover,
+.pf-c-input-group:has(input[type="password"]) button:hover,
+.pf-v5-c-input-group:has(input[type="password"]) button:hover {
   background: var(--synapse-blue-soft);
   color: var(--synapse-navy);
 }
 
-.input-group:has(input[name="password"]) button:focus-visible,
-.pf-c-input-group:has(input[name="password"]) button:focus-visible,
-.pf-v5-c-input-group:has(input[name="password"]) button:focus-visible {
+.input-group:has(input[type="password"]) button:focus-visible,
+.pf-c-input-group:has(input[type="password"]) button:focus-visible,
+.pf-v5-c-input-group:has(input[type="password"]) button:focus-visible {
   outline: 2px solid #c9d9f2;
   outline-offset: 1px;
 }
 
-.input-group:has(input[name="password"]) button::after,
-.pf-c-input-group:has(input[name="password"]) button::after,
-.pf-v5-c-input-group:has(input[name="password"]) button::after {
+.input-group:has(input[type="password"]) button::after,
+.pf-c-input-group:has(input[type="password"]) button::after,
+.pf-v5-c-input-group:has(input[type="password"]) button::after {
   content: none !important;
   border: 0 !important;
 }
 
 #kc-login,
+.pf-c-button.pf-m-primary,
 .pf-v5-c-button.pf-m-primary,
 input[type="submit"] {
   min-height: 44px;
@@ -237,6 +246,7 @@ input[type="submit"] {
 }
 
 #kc-login:hover,
+.pf-c-button.pf-m-primary:hover,
 .pf-v5-c-button.pf-m-primary:hover,
 input[type="submit"]:hover {
   background: #dfe9fb;
@@ -258,7 +268,7 @@ input[aria-invalid="true"],
   box-shadow: 0 0 0 1px rgba(180, 85, 80, .12) !important;
 }
 
-#input-error {
+[id^="input-error"] {
   display: block;
   margin-top: 6px;
   padding: 0;
@@ -270,12 +280,57 @@ input[aria-invalid="true"],
 }
 
 .alert-error,
+.pf-c-alert.pf-m-danger,
 .pf-v5-c-alert.pf-m-danger {
-  border-color: rgba(180, 85, 80, .22);
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 0;
   border-radius: 10px;
   background: #fff2f0;
+  box-shadow: inset 3px 0 #d98b86;
   color: #a44f4a;
   font-size: 12px;
+  line-height: 1.5;
+}
+
+.alert-warning,
+.pf-c-alert.pf-m-warning,
+.pf-v5-c-alert.pf-m-warning {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff8e8;
+  box-shadow: inset 3px 0 #e2a02b;
+  color: #76530e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.alert-warning .pf-c-alert__icon,
+.alert-warning .pf-v5-c-alert__icon,
+.pf-c-alert.pf-m-warning .pf-c-alert__icon,
+.pf-v5-c-alert.pf-m-warning .pf-v5-c-alert__icon {
+  color: #c88716;
+}
+
+#kc-passwd-update-form .checkbox,
+#kc-passwd-update-form .pf-c-check,
+#kc-passwd-update-form .pf-v5-c-check {
+  margin: 2px 0 18px;
+}
+
+#kc-passwd-update-form input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 8px 0 0;
+  accent-color: var(--synapse-navy);
+  vertical-align: -3px;
+}
+
+#kc-passwd-update-form input[type="submit"],
+#kc-passwd-update-form button[type="submit"] {
+  width: 100%;
 }
 
 @media (max-width: 560px) {
