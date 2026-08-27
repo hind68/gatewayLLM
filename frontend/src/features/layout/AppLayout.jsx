@@ -32,6 +32,19 @@ export default function AppLayout({
   const [isInspectorClosing, setIsInspectorClosing] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH)
   const [adminSection, setAdminSection] = useState(() => window.localStorage.getItem('synapse-admin-section') || 'overview')
+  // A modal-overlay's own backdrop-filter only visibly blurs whatever sits
+  // directly behind its translucent card - the rest of the screen (chat
+  // header, message list, sidebar) stays sharp, which reads as if pieces of
+  // the app blur out of sync with each other. Applying the same `filter:
+  // blur()` directly to the chat content and to the sidebar (both driven by
+  // this one flag) keeps everything behind the overlay blurred together,
+  // at the same intensity, on the same transition.
+  const isOverlayOpen = Boolean(
+    layout.isModelsView
+    || layout.isSearchModalOpen
+    || dialogs.modelDecision
+    || dialogs.pendingDeleteConversation
+  )
   const dragDepthRef = useRef(0)
   const resizeFrameRef = useRef(0)
   const closeInspectorTimerRef = useRef(0)
@@ -141,6 +154,7 @@ export default function AppLayout({
         activeConversation={activeConversation}
         admin={admin ? { ...admin, adminSection, setAdminSection } : admin}
         archiveConversation={actions.archiveConversation}
+        isBackgrounded={isOverlayOpen}
         closeSidebarPanels={layout.closeSidebarPanels}
         closeTransientMenus={layout.closeTransientMenus}
         collapsedPanel={layout.collapsedPanel}
@@ -199,7 +213,7 @@ export default function AppLayout({
             : chat.hasActiveMessages
               ? 'conversation-mode'
               : 'welcome-mode'
-        } ${isDraggingFiles ? 'is-dragging-files' : ''}`}
+        } ${isDraggingFiles ? 'is-dragging-files' : ''} ${isOverlayOpen ? 'is-backgrounded' : ''}`}
         style={{
           ...(chat.goBottomTop == null ? {} : { '--go-bottom-top': `${chat.goBottomTop}px` }),
           ...(chat.composerHeight == null ? {} : { '--composer-height': `${chat.composerHeight}px` }),

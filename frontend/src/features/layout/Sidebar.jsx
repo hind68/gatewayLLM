@@ -8,6 +8,7 @@ import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
 
 export default function Sidebar({
   activeConversation,
+  isBackgrounded,
   admin,
   archiveConversation,
   closeSidebarPanels,
@@ -94,7 +95,8 @@ export default function Sidebar({
       {isSidebarOpen && <button className="mobile-overlay" type="button" aria-label="Fermer" onClick={toggleSidebar} />}
 
       <aside
-        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isSidebarOpening ? 'sidebar-opening' : ''}`}
+        aria-hidden={isBackgrounded || undefined}
+        className={`sidebar ${isAdminMode ? 'admin-mode' : 'chat-mode'} ${isBackgrounded ? 'is-backgrounded' : ''} ${isSidebarOpening ? 'sidebar-opening' : ''}`.trim()}
         aria-label="Navigation Synapse"
         data-menu-root
         onTransitionEnd={(event) => {
