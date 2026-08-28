@@ -52,11 +52,12 @@
   place-items: center;
   font: inherit;
   line-height: 1;
+  transition: background-color 140ms ease, color 140ms ease;
 }
 
 .model-gallery-header button:hover {
-  background: #f5f5f5;
-  color: #111111;
+  background: #e9eaec;
+  color: #080808;
 }
 
 .close-icon {

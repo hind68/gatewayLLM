@@ -32,9 +32,10 @@ describe('RolesSection', () => {
     expect(html).not.toContain('admin-skeleton-list')
   })
 
-  it('shows a skeleton only while role details are loading', () => {
+  it('keeps the drawer visually quiet while role details are loading', () => {
     const html = renderToStaticMarkup(<RolesSection {...baseProps} loading />)
 
-    expect(html).toContain('admin-skeleton-list')
+    expect(html).toContain('admin-quiet-loading')
+    expect(html).not.toContain('admin-skeleton-list')
   })
 })

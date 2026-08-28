@@ -127,23 +127,20 @@
 }
 
 /* Application shells and section dividers */
-.sidebar,
-.admin-sidebar {
+.sidebar {
   border-right: 0;
   box-shadow: var(--surface-divider-x), 8px 0 24px rgba(15, 23, 42, 0.025);
 }
 
 .sidebar-primary-nav,
 .sidebar-admin-navigation,
-.sidebar-user,
-.admin-account {
+.sidebar-user {
   border-color: transparent;
 }
 
 .sidebar-primary-nav,
 .sidebar-admin-navigation,
-.sidebar-user,
-.admin-account {
+.sidebar-user {
   box-shadow: inset 0 1px rgba(15, 23, 42, 0.045);
 }
 
@@ -191,12 +188,9 @@
 .admin-field input,
 .admin-field select,
 .admin-field textarea,
-.role-selector,
-.audit-view-switch,
 .role-check,
 .restriction-chip,
 .admin-pagination button,
-.admin-back-chat,
 .admin-button.secondary {
   border: 0;
   box-shadow: var(--surface-shadow-xs);

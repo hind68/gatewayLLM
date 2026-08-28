@@ -47,19 +47,24 @@ import { modelCardMeta, modelProviderName } from '../../utils/modelMetadata'
 import {
   AdminPageHeader,
   AdminShell,
+  AdminTabs,
   AdminToolbar,
+  CollapsibleSection,
   ConfirmDialog,
   CopyButton,
+  DetailDrawer,
   EmptyState,
   ErrorState,
+  FilterPopover,
   Icon,
   Modal,
+  OverflowMenu,
   Pagination,
   Skeleton,
   StatCard,
   StatusBadge,
 } from './AdminComponents'
-import { formatAction, formatEntity, formatKicker } from './AdminUtils'
+import { formatAction, formatEntity } from './AdminUtils'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isUuid = (value) => UUID_PATTERN.test(String(value || ''))
@@ -69,6 +74,21 @@ const blankModel = { providerId: '', alias: '', providerModel: '', displayName: 
 const MODEL_LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const MAX_MODEL_LOGO_BYTES = 512 * 1024
 const MANAGED_KEYCLOAK_ROLES = ['ADMIN', 'INTERN', 'EXTERN']
+const ROLE_LABELS = { ADMIN: 'Administrateur', INTERN: 'Interne', EXTERN: 'Externe' }
+const USER_AVATAR_COLORS = ['#496a8f', '#3f766c', '#685d8f', '#a6613f', '#925769', '#4f7551', '#526273', '#8a6a32']
+
+function roleLabel(role) {
+  return ROLE_LABELS[String(role || '').toUpperCase()] || role || 'Aucun rôle'
+}
+
+function UserAvatar({ user, large = false }) {
+  const label = String(user.nomAffichage || user.username || user.email || '?')
+  const colorKey = String(user.externalId || user.id || user.email || label)
+  let hash = 0
+  for (let index = 0; index < colorKey.length; index += 1) hash = ((hash << 5) - hash + colorKey.charCodeAt(index)) | 0
+  const backgroundColor = USER_AVATAR_COLORS[Math.abs(hash) % USER_AVATAR_COLORS.length]
+  return <span className={`user-mark${large ? ' large' : ''}`} style={{ backgroundColor }} aria-hidden="true">{label.slice(0, 1).toUpperCase()}</span>
+}
 
 const STATUS_OPTIONS = [
   { value: 'ACTIF', label: 'Actif' },
@@ -79,7 +99,6 @@ const SEVERITY_OPTIONS = [
   { value: 'low', label: 'Faible' },
   { value: 'medium', label: 'Moyenne' },
   { value: 'high', label: 'Élevée' },
-  { value: 'critical', label: 'Critique' },
 ]
 
 const DLP_ACTION_OPTIONS = [
@@ -150,6 +169,7 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   const [roleBannedWords, setRoleBannedWords] = useState([])
   const [roleModel, setRoleModel] = useState('')
   const [roleWord, setRoleWord] = useState('')
+  const [roleCounts, setRoleCounts] = useState({})
 
   const [securityMetrics, setSecurityMetrics] = useState(null)
   const [overviewMessages, setOverviewMessages] = useState([])
@@ -205,13 +225,13 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
       let data
       try {
         const keycloakUsers = await fetchKeycloakUsers(token)
-        data = (keycloakUsers || []).map((user) => ({ id: user.id, externalId: user.id, nomAffichage: user.username || user.email || 'Utilisateur', email: user.email, enabled: user.enabled !== false, keycloakManaged: true }))
+        data = (keycloakUsers || []).map((user) => ({ id: user.id, externalId: user.id, nomAffichage: user.username || user.email || 'Utilisateur', email: user.email, enabled: user.enabled !== false, roles: user.realmRoles || user.roles || [], keycloakManaged: true }))
       } catch {
         data = await fetchUsers(token)
       }
       setUsers(data || [])
+      setSelectedUser((current) => current ? (data || []).find((user) => user.id === current.id) || null : null)
       setStatus('users', 'success')
-      if (data?.length) await selectUser(data[0])
     } catch (error) { setStatus('users', 'error', error.message); fail(error) }
   }
   async function selectUser(user) {
@@ -261,7 +281,16 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
     try {
       const roles = managedKeycloakRoles(await fetchKeycloakRoles(token))
       setKeycloakRoles(roles)
-      setSelectedRole((current) => current && roles.some((role) => role.name === current) ? current : roles[0]?.name || '')
+      setSelectedRole((current) => current && roles.some((role) => role.name === current) ? current : '')
+      const summaries = await Promise.all(roles.map(async (role) => {
+        try {
+          const [restrictions, words] = await Promise.all([fetchRoleRestrictions(role.name, token), fetchRoleBannedWords(role.name, token)])
+          return [role.name, { restrictions: restrictions?.length || 0, words: words?.length || 0 }]
+        } catch {
+          return [role.name, { restrictions: null, words: null }]
+        }
+      }))
+      setRoleCounts(Object.fromEntries(summaries))
       setStatus('keycloakRoles', 'success')
     } catch (error) {
       setKeycloakRoles([])
@@ -271,7 +300,7 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   }
   async function loadRoleData(role) {
     setStatus('roles', 'loading')
-    try { const [restrictions, words] = await Promise.all([fetchRoleRestrictions(role, token), fetchRoleBannedWords(role, token)]); setRoleRestrictions(restrictions || []); setRoleBannedWords(words || []); setStatus('roles', 'success') } catch (error) { setStatus('roles', 'error', error.message); fail(error) }
+    try { const [restrictions, words] = await Promise.all([fetchRoleRestrictions(role, token), fetchRoleBannedWords(role, token)]); setRoleRestrictions(restrictions || []); setRoleBannedWords(words || []); setRoleCounts((current) => ({ ...current, [role]: { restrictions: restrictions?.length || 0, words: words?.length || 0 } })); setStatus('roles', 'success') } catch (error) { setStatus('roles', 'error', error.message); fail(error) }
   }
   async function loadAuditLogs() {
     setStatus('audit', 'loading')
@@ -321,12 +350,12 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   return (
     <AdminShell activeSection={activeSection} onSectionChange={setActiveSection} onBackToChat={onBackToChat} keycloak={keycloak}>
       <div className="admin-content">
-        <AdminPageHeader eyebrow="CENTRE DE CONTRÔLE" title={sectionTitle(activeSection)} description={sectionDescription(activeSection)} actions={<span className="admin-live-status"><span />Connecté</span>} />
+        <AdminPageHeader title={sectionTitle(activeSection)} description={sectionDescription(activeSection)} />
         {activeSection === 'overview' && <OverviewSection loading={loading} errors={errorFor} users={users} activeModels={activeModels} adminModels={adminModels} patterns={patterns} activePatterns={activePatterns} globalWords={globalWords} securityMetrics={securityMetrics} chartData={chartData} overviewMessages={overviewMessages} onSectionChange={setActiveSection} />}
         {activeSection === 'security' && <SecuritySection loading={loading} errorFor={errorFor} globalWords={filteredWords} wordSearch={wordSearch} setWordSearch={setWordSearch} onAddWord={(value) => mutate('global-word', () => addGlobalBannedWord(value, token), 'Mot banni ajouté', loadGlobalWords)} onDeleteWord={(id, word) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: `« ${word} » sera supprimé des règles globales.`, onConfirm: () => mutate('delete-word', () => removeGlobalBannedWord(id, token), 'Mot banni supprimé', loadGlobalWords) })} patterns={filteredPatterns} patternSearch={patternSearch} setPatternSearch={setPatternSearch} onCreatePattern={() => setPatternModal({ ...blankPattern, mode: 'create' })} onEditPattern={(pattern) => setPatternModal({ ...blankPattern, ...pattern, mode: 'edit' })} onTogglePattern={(pattern) => mutate(`pattern-${pattern.name}`, () => updatePattern(pattern.name, { ...pattern, enabled: pattern.enabled === false }, token), pattern.enabled === false ? 'Pattern activé' : 'Pattern désactivé', loadPatterns)} onDeletePattern={(name) => askConfirmation({ title: 'Supprimer ce pattern ?', message: 'Cette règle DLP sera supprimée définitivement.', onConfirm: () => mutate('delete-pattern', () => removePattern(name, token), 'Pattern supprimé', loadPatterns) })} onCopyExpression={() => notify('Expression copiée')} onCopyError={fail} />}
-        {activeSection === 'models' && <ModelsSection loading={loading} errorFor={errorFor} providers={filteredProviders} allProviders={adminProviders} models={filteredAdminModels} availableModels={availableModels} providerSearch={providerSearch} setProviderSearch={setProviderSearch} modelSearch={modelSearch} setModelSearch={setModelSearch} onCreateProvider={() => setProviderModal({ ...blankProvider, mode: 'create' })} onEditProvider={(provider) => setProviderModal({ code: provider.code || '', name: provider.nom || provider.name || '', status: provider.statut || 'ACTIF', apiKeyEnvVar: provider.apiKeyEnvVar || '', id: provider.id, mode: 'edit' })} onToggleProvider={(provider) => mutate(`provider-status-${provider.id}`, () => updateAdminProvider(provider.id, { status: provider.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF' }, token), provider.statut === 'ACTIF' ? 'Fournisseur désactivé' : 'Fournisseur activé', async () => { await loadAdminProviders(); await refreshModelViews() })} onDeleteProvider={(provider) => askConfirmation({ title: 'Supprimer ce fournisseur ?', message: 'La suppression est refusée si des modèles y sont encore associés.', onConfirm: () => mutate('delete-provider', () => deleteAdminProvider(provider.id, token), 'Fournisseur supprimé', loadAdminProviders) })} onCreateModel={() => setModelModal({ ...blankModel, mode: 'create' })} onEditModel={(model) => setModelModal({ providerId: String(model.providerId || ''), alias: model.aliasInterne || model.alias || '', providerModel: model.nomModeleProvider || '', displayName: model.nomAffichage || '', description: model.description || '', logoUrl: model.logoUrl || '', status: model.statut || 'ACTIF', id: model.id, mode: 'edit' })} onToggleModel={(model) => mutate(`model-status-${model.id}`, () => setAdminModelStatus(model.id, model.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF', token), model.statut === 'ACTIF' ? 'Modèle désactivé' : 'Modèle activé', async () => { await refreshModelViews(); await loadSecurityData() })} onDeleteModel={(model) => askConfirmation({ title: 'Supprimer ce modèle ?', message: 'La suppression est refusée si des conversations ou restrictions le référencent.', onConfirm: () => mutate('delete-model', () => deleteAdminModel(model.id, token), 'Modèle supprimé', refreshModelViews) })} onTestModel={(model) => mutate(`test-model-${model.id}`, async () => { const result = await testAdminModel(model.id, token); setModelTestResults((current) => ({ ...current, [model.id]: { ...result, testedAt: new Date().toISOString() } })) }, 'Test du modèle terminé')} modelTestResults={modelTestResults} />}
+        {activeSection === 'models' && <ModelsSection loading={loading} errorFor={errorFor} providers={filteredProviders} allProviders={adminProviders} models={filteredAdminModels} allModels={adminModels} availableModels={availableModels} providerSearch={providerSearch} setProviderSearch={setProviderSearch} modelSearch={modelSearch} setModelSearch={setModelSearch} onCreateProvider={() => setProviderModal({ ...blankProvider, mode: 'create' })} onEditProvider={(provider) => setProviderModal({ code: provider.code || '', name: provider.nom || provider.name || '', status: provider.statut || 'ACTIF', apiKeyEnvVar: provider.apiKeyEnvVar || '', id: provider.id, mode: 'edit' })} onToggleProvider={(provider) => mutate(`provider-status-${provider.id}`, () => updateAdminProvider(provider.id, { status: provider.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF' }, token), provider.statut === 'ACTIF' ? 'Fournisseur désactivé' : 'Fournisseur activé', async () => { await loadAdminProviders(); await refreshModelViews() })} onDeleteProvider={(provider) => askConfirmation({ title: 'Supprimer ce fournisseur ?', message: 'La suppression est refusée si des modèles y sont encore associés.', onConfirm: () => mutate('delete-provider', () => deleteAdminProvider(provider.id, token), 'Fournisseur supprimé', loadAdminProviders) })} onCreateModel={() => setModelModal({ ...blankModel, mode: 'create' })} onEditModel={(model) => setModelModal({ providerId: String(model.providerId || ''), alias: model.aliasInterne || model.alias || '', providerModel: model.nomModeleProvider || '', displayName: model.nomAffichage || '', description: model.description || '', logoUrl: model.logoUrl || '', status: model.statut || 'ACTIF', id: model.id, mode: 'edit' })} onToggleModel={(model) => mutate(`model-status-${model.id}`, () => setAdminModelStatus(model.id, model.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF', token), model.statut === 'ACTIF' ? 'Modèle désactivé' : 'Modèle activé', async () => { await refreshModelViews(); await loadSecurityData() })} onDeleteModel={(model) => askConfirmation({ title: 'Supprimer ce modèle ?', message: 'La suppression est refusée si des conversations ou restrictions le référencent.', onConfirm: () => mutate('delete-model', () => deleteAdminModel(model.id, token), 'Modèle supprimé', refreshModelViews) })} onTestModel={(model) => mutate(`test-model-${model.id}`, async () => { const result = await testAdminModel(model.id, token); setModelTestResults((current) => ({ ...current, [model.id]: { ...result, testedAt: new Date().toISOString() } })) }, 'Test du modèle terminé')} modelTestResults={modelTestResults} />}
         {activeSection === 'users' && <UsersSection loading={loading} errorFor={errorFor} users={filteredUsers} allUsers={users} search={userSearch} setSearch={setUserSearch} selectedUser={selectedUser} onSelectUser={selectUser} keycloakRoles={keycloakRoles} keycloakRolesError={errorFor('keycloakRoles')} onRetryKeycloakRoles={loadKeycloakRoles} selectedRoles={selectedKeycloakRoles} setSelectedRoles={setSelectedKeycloakRoles} onSaveRoles={() => mutate('user-roles', () => setKeycloakUserRoles(selectedUser.externalId, selectedKeycloakRoles, token), 'Rôles mis à jour')} restrictions={userRestrictions} bannedWords={userBannedWords} models={availableModels} selectedModel={userModel} setSelectedModel={setUserModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={() => mutate('user-restriction', () => addLlmRestriction(selectedUser.externalId, userModel, token), 'Restriction ajoutée', () => selectUser(selectedUser))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer cette restriction ?', message: `La restriction « ${item.llmModelAlias} » sera supprimée.`, onConfirm: () => mutate('delete-user-restriction', () => removeLlmRestriction(item.id, token), 'Restriction supprimée', () => selectUser(selectedUser)) })} onAddWord={() => mutate('user-word', () => addUserBannedWord(selectedUser.externalId, userWord, token), 'Mot banni ajouté', () => { setUserWord(''); return selectUser(selectedUser) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot ?', message: `« ${item.word} » sera supprimé pour cet utilisateur.`, onConfirm: () => mutate('delete-user-word', () => removeUserBannedWord(item.id, token), 'Mot banni supprimé', () => selectUser(selectedUser)) })} onToggleUser={(user) => mutate('user-status', () => setKeycloakUserEnabled(user.externalId, !user.enabled, token), user.enabled ? 'Utilisateur désactivé' : 'Utilisateur activé', loadUsers)} />}
-        {activeSection === 'roles' && <RolesSection loading={loading('roles')} errorFor={errorFor} roles={keycloakRoles.map((item) => item.name).filter(Boolean)} rolesLoading={loading('keycloakRoles')} rolesError={errorFor('keycloakRoles')} onRetryRoles={() => selectedRole ? loadRoleData(selectedRole) : loadKeycloakRoles()} role={selectedRole} setRole={setSelectedRole} restrictions={roleRestrictions} bannedWords={roleBannedWords} models={availableModels} selectedModel={roleModel} setSelectedModel={setRoleModel} word={roleWord} setWord={setRoleWord} onAddRestriction={() => mutate('role-restriction', () => addRoleLlmRestriction(selectedRole, roleModel, token), 'Restriction ajoutée', () => loadRoleData(selectedRole))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer la restriction ?', message: 'La restriction sera supprimée pour ce rôle.', onConfirm: () => mutate('delete-role-restriction', () => removeRoleLlmRestriction(item.id, token), 'Restriction supprimée', () => loadRoleData(selectedRole)) })} onAddWord={() => mutate('role-word', () => addRoleBannedWord(selectedRole, roleWord, token), 'Mot banni ajouté', () => { setRoleWord(''); return loadRoleData(selectedRole) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: 'Ce mot sera supprimé pour le rôle sélectionné.', onConfirm: () => mutate('delete-role-word', () => removeRoleBannedWord(item.id, token), 'Mot banni supprimé', () => loadRoleData(selectedRole)) })} />}
+        {activeSection === 'roles' && <RolesSection loading={loading('roles')} errorFor={errorFor} roles={keycloakRoles.map((item) => item.name).filter(Boolean)} roleCounts={roleCounts} rolesLoading={loading('keycloakRoles')} rolesError={errorFor('keycloakRoles')} onRetryRoles={() => selectedRole ? loadRoleData(selectedRole) : loadKeycloakRoles()} role={selectedRole} setRole={setSelectedRole} restrictions={roleRestrictions} bannedWords={roleBannedWords} models={availableModels} selectedModel={roleModel} setSelectedModel={setRoleModel} word={roleWord} setWord={setRoleWord} onAddRestriction={() => mutate('role-restriction', () => addRoleLlmRestriction(selectedRole, roleModel, token), 'Restriction ajoutée', () => loadRoleData(selectedRole))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer la restriction ?', message: 'La restriction sera supprimée pour ce rôle.', onConfirm: () => mutate('delete-role-restriction', () => removeRoleLlmRestriction(item.id, token), 'Restriction supprimée', () => loadRoleData(selectedRole)) })} onAddWord={() => mutate('role-word', () => addRoleBannedWord(selectedRole, roleWord, token), 'Mot banni ajouté', () => { setRoleWord(''); return loadRoleData(selectedRole) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: 'Ce mot sera supprimé pour le rôle sélectionné.', onConfirm: () => mutate('delete-role-word', () => removeRoleBannedWord(item.id, token), 'Mot banni supprimé', () => loadRoleData(selectedRole)) })} />}
         {activeSection === 'audit' && <AuditSection loading={loading('audit')} error={errorFor('audit')} view={auditView} setView={(view) => { setAuditView(view); setExpandedAuditId(null) }} logs={auditLogs} messages={filteredMessages} users={users} search={auditSearch} setSearch={(value) => { setAuditSearch(value); setAuditPage(0) }} action={auditAction} setAction={(value) => { setAuditAction(value); setAuditPage(0) }} entity={auditEntity} setEntity={(value) => { setAuditEntity(value); setAuditPage(0) }} date={auditDate} setDate={(value) => { setAuditDate(value); setAuditPage(0) }} filteredSearch={filteredSearch} setFilteredSearch={(value) => { setFilteredSearch(value); setFilteredPage(0) }} filteredAction={filteredAction} setFilteredAction={(value) => { setFilteredAction(value); setFilteredPage(0) }} filteredUserId={filteredUserId} setFilteredUserId={(value) => { setFilteredUserId(value); setFilteredPage(0) }} filteredDate={filteredDate} setFilteredDate={(value) => { setFilteredDate(value); setFilteredPage(0) }} expandedId={expandedAuditId} setExpandedId={setExpandedAuditId} page={auditView === 'permissions' ? auditPage : filteredPage} totalPages={auditView === 'permissions' ? auditTotalPages : filteredTotalPages} onPageChange={auditView === 'permissions' ? setAuditPage : setFilteredPage} />}
       </div>
       {patternModal && <PatternModal data={patternModal} busy={busyAction === 'pattern'} onClose={() => setPatternModal(null)} onSave={(data) => mutate('pattern', () => data.mode === 'edit' ? updatePattern(data.name, data, token) : addPattern(data, token), data.mode === 'edit' ? 'Pattern mis à jour' : 'Pattern ajouté', async () => { setPatternModal(null); await loadPatterns() })} />}
@@ -348,49 +377,423 @@ function buildOverviewData(messages) {
   return { days, max: Math.max(1, ...days.map((day) => day.count)), categories: categoryRows, categoryMax: Math.max(1, ...categoryRows.map((item) => item.count)) }
 }
 
-function OverviewSection({ loading, errors, users, activeModels, adminModels, patterns, activePatterns, globalWords, securityMetrics, chartData, overviewMessages, onSectionChange }) {
-  return <>
-    <div className="admin-stat-grid"><StatCard icon="users" label="Utilisateurs" value={<Metric isLoading={loading('users')} error={errors('users')} value={users.length} />} context="Comptes connus" tone="blue" onClick={() => onSectionChange('users')} /><StatCard icon="spark" label="Modèles actifs" value={<Metric isLoading={loading('models')} error={errors('models')} value={activeModels} />} context={`Sur ${adminModels.length} configurés`} tone="peach" onClick={() => onSectionChange('models')} /><StatCard icon="shield" label="Patterns DLP" value={<Metric isLoading={loading('patterns')} error={errors('patterns')} value={patterns.length} />} context={`${activePatterns} actifs`} tone="green" onClick={() => onSectionChange('security')} /><StatCard icon="key" label="Mots bannis" value={<Metric isLoading={loading('globalWords')} error={errors('globalWords')} value={globalWords.length} />} context="Règles globales" tone="navy" onClick={() => onSectionChange('security')} /></div>
-    <section className="admin-card admin-security-banner"><div><div className="admin-card-kicker">{formatKicker("SÉCURITÉ AUJOURD'HUI")}</div><h2>Protection DLP</h2><p>Les chiffres ci-dessous proviennent des événements de sécurité disponibles.</p></div><div className="admin-security-metrics"><MetricBox label="Incidents" value={securityMetrics?.today?.analysedIncidents ?? 0} loading={loading('security')} error={errors('security')} /><MetricBox label="Bloqués" value={securityMetrics?.today?.blocked ?? 0} loading={loading('security')} error={errors('security')} tone="danger" /><MetricBox label="Masqués" value={securityMetrics?.today?.redacted ?? 0} loading={loading('security')} error={errors('security')} tone="warning" /><MetricBox label="Élevés / critiques" value={(securityMetrics?.highSeverityIncidents ?? 0) + (securityMetrics?.criticalIncidents ?? 0)} loading={loading('security')} error={errors('security')} tone="peach" /></div></section>
-    <div className="admin-chart-grid"><section className="admin-card"><SectionHeading kicker="TENDANCE" title="Incidents DLP · 7 derniers jours" context={`${overviewMessages.length} événements chargés`} />{loading('overview') ? <Skeleton rows={4} /> : errors('overview') ? <ErrorState message={errors('overview')} /> : <div className="admin-bar-chart" aria-label="Incidents DLP sur les sept derniers jours">{chartData.days.map((day) => <div className="admin-bar-column" key={day.date.toISOString()}><strong>{day.count}</strong><div className="admin-bar-track"><i style={{ height: `${Math.max(4, (day.count / chartData.max) * 100)}%` }} /></div><span>{day.label}</span></div>)}</div>}</section><section className="admin-card"><SectionHeading kicker="DÉTECTION" title="Catégories détectées" />{chartData.categories.length ? <div className="admin-category-chart">{chartData.categories.map((item) => <div className="admin-category-row" key={item.name}><div><span>{item.name}</span><strong>{item.count}</strong></div><i style={{ width: `${(item.count / chartData.categoryMax) * 100}%` }} /></div>)}</div> : <EmptyState icon="activity" title="Aucune catégorie récente" description="Les catégories apparaîtront lorsque des événements DLP seront disponibles." />}</section></div>
-  </>
+function OverviewSection({ loading, errors, users, activeModels, adminModels, patterns, activePatterns, securityMetrics, chartData, overviewMessages, onSectionChange }) {
+  const [selectedIncident, setSelectedIncident] = useState(null)
+  const recentIncidents = useMemo(
+    () => [...overviewMessages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5),
+    [overviewMessages],
+  )
+  const userNamesById = useMemo(() => new Map(users.flatMap((user) => {
+    const id = user.externalId || user.id
+    const name = user.nomAffichage || user.username || user.email
+    return id && name ? [[String(id), name]] : []
+  })), [users])
+  const incidentUserName = (incident) => userNamesById.get(String(incident?.userKeycloakId || '')) || 'Utilisateur Synapse'
+  const blockedToday = securityMetrics?.today?.blocked ?? overviewMessages.filter((item) => String(item.action || item.requestStatus).toUpperCase().includes('BLOCK')).length
+
+  return (
+    <>
+      <div className="admin-stat-grid">
+        <StatCard icon="users" iconPng="/assets/admin-users.png" label="Utilisateurs" value={<Metric isLoading={loading('users')} error={errors('users')} value={users.length} />} context="Comptes connus" onClick={() => onSectionChange('users')} />
+        <StatCard icon="spark" iconPng="/assets/admin-models.png" label="Modèles actifs" value={<Metric isLoading={loading('models')} error={errors('models')} value={activeModels} />} context={`${adminModels.length} configurés`} onClick={() => onSectionChange('models')} />
+        <StatCard icon="shield" iconPng="/assets/admin-security.png" label="Patterns DLP" value={<Metric isLoading={loading('patterns')} error={errors('patterns')} value={patterns.length} />} context={`${activePatterns} actifs`} onClick={() => onSectionChange('security')} />
+        <StatCard icon="activity" iconPng="/assets/admin-audit-log-cropped.png" label="Messages filtrés" value={<Metric isLoading={loading('overview')} error={errors('overview')} value={overviewMessages.length} />} context={blockedToday ? `${blockedToday} bloqués aujourd’hui` : 'Aucun blocage aujourd’hui'} onClick={() => onSectionChange('audit')} />
+      </div>
+
+      <div className="admin-overview-grid">
+        <section className="admin-card admin-trend-card">
+          <SectionHeading title="Incidents DLP · 7 derniers jours" context={`${overviewMessages.length} événements`} />
+          {loading('overview') ? <Skeleton rows={4} /> : errors('overview') ? <ErrorState message={errors('overview')} /> : (
+            <div className="admin-bar-chart" aria-label="Incidents DLP sur les sept derniers jours">
+              {chartData.days.map((day) => <div className="admin-bar-column" key={day.date.toISOString()}><strong>{day.count}</strong><div className="admin-bar-track"><i style={{ height: `${Math.max(4, (day.count / chartData.max) * 100)}%` }} /></div><span>{day.label}</span></div>)}
+            </div>
+          )}
+        </section>
+
+        <section className="admin-card">
+          <SectionHeading title="Catégories détectées" />
+          {chartData.categories.length ? (
+            <div className="admin-category-chart">
+              {chartData.categories.map((item) => <div className="admin-category-row" key={item.name}><div><span>{item.name}</span><strong>{item.count}</strong></div><i style={{ width: `${(item.count / chartData.categoryMax) * 100}%` }} /></div>)}
+            </div>
+          ) : <EmptyState icon="activity" title="Aucune catégorie récente" description="Les catégories apparaîtront avec les prochains événements DLP." />}
+        </section>
+
+        <section className="admin-card admin-recent-card">
+          <SectionHeading title="Incidents récents" context={recentIncidents.length ? `${recentIncidents.length} affichés` : undefined} />
+          {loading('overview') ? <Skeleton rows={4} /> : errors('overview') ? <ErrorState message={errors('overview')} /> : recentIncidents.length ? (
+            <div className="admin-compact-list">
+              {recentIncidents.map((incident) => {
+                const id = incident.id || incident.timestamp
+                const label = incident.reason || incident.detectedTypes || 'Événement DLP'
+                const status = incident.requestStatus || incident.action
+                return (
+                  <div key={id} className="admin-compact-row interactive" role="button" tabIndex="0" onClick={() => setSelectedIncident(incident)} onKeyDown={(event) => handleRowKey(event, () => setSelectedIncident(incident))}>
+                    <span className="row-icon"><Icon name="shield" size={17} /></span>
+                    <span className="row-main"><strong>{label}</strong><small>{incidentUserName(incident)} · {formatDate(incident.timestamp)}</small></span>
+                    <StatusBadge status={status} label={formatAction(status)} />
+                    <Icon name="chevron" size={16} />
+                  </div>
+                )
+              })}
+            </div>
+          ) : <EmptyState icon="activity" title="Aucun incident récent" description="La protection DLP ne signale aucun événement récent." />}
+        </section>
+      </div>
+
+      {selectedIncident && (
+        <DetailDrawer title="Détail de l’incident" description={formatDate(selectedIncident.timestamp)} onClose={() => setSelectedIncident(null)}>
+          <div className="admin-detail-grid">
+            <DetailValue label="Événement" value={selectedIncident.reason || 'Événement DLP'} />
+            <DetailValue label="Statut" value={<StatusBadge status={selectedIncident.requestStatus || selectedIncident.action} label={formatAction(selectedIncident.requestStatus || selectedIncident.action)} />} />
+            <DetailValue label="Utilisateur" value={incidentUserName(selectedIncident)} />
+            <DetailValue label="Détections" value={selectedIncident.detectionCount ?? 0} />
+            <DetailValue label="Catégories" value={selectedIncident.detectedTypes || 'Non précisées'} wide />
+          </div>
+          <SafeContent value={selectedIncident.redactedContent} />
+        </DetailDrawer>
+      )}
+    </>
+  )
 }
-function MetricBox({ label, value, loading, error, tone = '' }) { return <div className={`metric-box ${tone}`}><strong><Metric value={value} isLoading={loading} error={error} /></strong><span>{label}</span></div> }
-function SectionHeading({ kicker, title, context, action }) { return <div className="admin-section-heading"><div><div className="admin-card-kicker">{formatKicker(kicker)}</div><h2>{title}</h2></div><div>{context && <span className="admin-heading-context">{context}</span>}{action}</div></div> }
+
+function SectionHeading({ title, context, action }) {
+  return <div className="admin-section-heading"><div><h2>{title}</h2>{context && <span className="admin-heading-context">{context}</span>}</div>{action}</div>
+}
+
+function DetailValue({ label, value, wide = false }) {
+  return <div className={wide ? 'wide' : ''}><span>{label}</span><strong>{value ?? '—'}</strong></div>
+}
+
+function SafeContent({ value }) {
+  return <div className="safe-content-panel"><span>Contenu sécurisé</span><p>{value || 'La version sécurisée n’est pas disponible pour cet événement.'}</p><small>Le contenu original sensible n’est jamais affiché ici.</small></div>
+}
+
+function handleRowKey(event, onSelect) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    onSelect()
+  }
+}
 
 function SecuritySection({ loading, errorFor, globalWords, wordSearch, setWordSearch, onAddWord, onDeleteWord, patterns, patternSearch, setPatternSearch, onCreatePattern, onEditPattern, onTogglePattern, onDeletePattern, onCopyExpression, onCopyError }) {
+  const [view, setView] = useState('patterns')
   const [patternSort, setPatternSort] = useState('name-asc')
+  const [selectedPattern, setSelectedPattern] = useState(null)
   const sortedPatterns = useMemo(() => {
     const severityRank = { low: 1, medium: 2, high: 3, critical: 4 }
     const [field, direction] = patternSort.split('-')
-    const multiplier = direction === 'desc' ? -1 : 1
+    const factor = direction === 'desc' ? -1 : 1
     return [...patterns].sort((left, right) => {
-      if (field === 'severity') return ((severityRank[left.severity] || 0) - (severityRank[right.severity] || 0)) * multiplier
-      if (field === 'status') return ((left.enabled === false ? 0 : 1) - (right.enabled === false ? 0 : 1)) * multiplier
-      return String(left[field] || '').localeCompare(String(right[field] || ''), 'fr', { sensitivity: 'base' }) * multiplier
+      if (field === 'severity') return ((severityRank[left.severity] || 0) - (severityRank[right.severity] || 0)) * factor
+      if (field === 'status') return ((left.enabled === false ? 0 : 1) - (right.enabled === false ? 0 : 1)) * factor
+      return String(field === 'action' ? left.action : left.name).localeCompare(String(field === 'action' ? right.action : right.name), 'fr') * factor
     })
-  }, [patternSort, patterns])
-  return <div className="admin-stack"><section className="admin-card"><SectionHeading kicker="RÈGLES GLOBALES" title="Mots bannis" context={`${globalWords.length} résultat${globalWords.length !== 1 ? 's' : ''}`} action={<AddWordForm onSubmit={onAddWord} />} /><AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={wordSearch} onChange={(event) => setWordSearch(event.target.value)} placeholder="Rechercher un mot ou une expression" aria-label="Rechercher les mots bannis" /></div></AdminToolbar>{loading('globalWords') ? <Skeleton rows={4} /> : errorFor('globalWords') ? <ErrorState message={errorFor('globalWords')} /> : globalWords.length ? <div className="admin-compact-list">{globalWords.map((item, index) => <div className="admin-compact-row" key={item.id || index}><span>{item.word || item}</span>{item.id && <button type="button" className="admin-icon-button danger" aria-label={`Supprimer ${item.word || item}`} onClick={() => onDeleteWord(item.id, item.word || item)}><Icon name="trash" size={15} /></button>}</div>)}</div> : <EmptyState icon="shield" title="Aucun mot banni" description="Les règles globales apparaîtront ici après leur création." />}</section><section className="admin-card"><SectionHeading kicker="DÉTECTION" title="Patterns DLP" context={`${patterns.length} règle${patterns.length !== 1 ? 's' : ''}`} action={<button type="button" className="admin-button primary" onClick={onCreatePattern}><Icon name="plus" size={15} />Ajouter un pattern</button>} /><AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={patternSearch} onChange={(event) => setPatternSearch(event.target.value)} placeholder="Rechercher par nom, type ou expression" aria-label="Rechercher les patterns" /></div><div className="admin-filter-field pattern-sort-field"><span className="sr-only">Trier les patterns</span><SelectDropdown value={patternSort} options={PATTERN_SORT_OPTIONS} onChange={setPatternSort} ariaLabel="Trier les patterns" className="admin-custom-dropdown compact" /></div></AdminToolbar>{loading('patterns') ? <Skeleton rows={5} /> : errorFor('patterns') ? <ErrorState message={errorFor('patterns')} /> : patterns.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Nom</th><th>Type</th><th>Expression</th><th>Sévérité</th><th>Action</th><th>Statut</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{sortedPatterns.map((pattern) => <tr key={pattern.name}><td><strong>{pattern.name}</strong></td><td>{pattern.type || 'custom'}</td><td><div className="regex-cell"><code title={pattern.pattern}>{pattern.pattern}</code><CopyButton value={pattern.pattern} label="Copier l’expression" onCopied={onCopyExpression} onCopyError={onCopyError} /></div></td><td><StatusBadge status={pattern.severity} label={severityLabel(pattern.severity)} /></td><td>{actionLabel(pattern.action)}</td><td><StatusBadge status={pattern.enabled === false ? 'inactive' : 'active'} label={pattern.enabled === false ? 'Inactif' : 'Actif'} /></td><td><div className="table-actions"><button type="button" className="admin-text-button" onClick={() => onEditPattern(pattern)}><Icon name="edit" size={14} />Modifier</button><button type="button" className="admin-text-button" onClick={() => onTogglePattern(pattern)}>{pattern.enabled === false ? 'Activer' : 'Désactiver'}</button><button type="button" className="admin-text-button danger security-pattern-delete-button" title="Supprimer" aria-label={`Supprimer ${pattern.name}`} onClick={() => onDeletePattern(pattern.name)}><Icon name="trash" size={14} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState icon="shield" title="Aucun pattern configuré" description="Créez une règle DLP pour commencer à protéger les échanges." />}</section></div>
+  }, [patterns, patternSort])
+
+  return (
+    <div className="admin-stack">
+      <AdminTabs value={view} onChange={setView} label="Gestion de la sécurité" tabs={[{ value: 'patterns', label: 'Patterns DLP' }, { value: 'words', label: 'Mots bannis' }]} />
+
+      {view === 'patterns' ? (
+        <section className="admin-card">
+          <SectionHeading title="Patterns DLP" context={`${patterns.length} règles`} action={<button type="button" className="admin-button primary" onClick={onCreatePattern}><Icon name="plus" size={15} />Ajouter un pattern</button>} />
+          <AdminToolbar>
+            <div className="admin-search-field"><Icon name="search" size={16} /><input value={patternSearch} onChange={(event) => setPatternSearch(event.target.value)} placeholder="Rechercher un pattern" aria-label="Rechercher les patterns" /></div>
+            <SelectDropdown value={patternSort} options={PATTERN_SORT_OPTIONS} onChange={setPatternSort} ariaLabel="Trier les patterns" className="admin-custom-dropdown compact" />
+          </AdminToolbar>
+          {loading('patterns') ? <Skeleton rows={5} /> : errorFor('patterns') ? <ErrorState message={errorFor('patterns')} /> : sortedPatterns.length ? (
+            <div className="admin-compact-list">
+              {sortedPatterns.map((pattern) => (
+                <div key={pattern.name} className="admin-compact-row interactive pattern-row" data-severity={String(pattern.severity || 'medium').toLowerCase()} role="button" tabIndex="0" onClick={() => setSelectedPattern(pattern)} onKeyDown={(event) => handleRowKey(event, () => setSelectedPattern(pattern))}>
+                  <span className="row-main"><strong>{pattern.name}</strong><small>{pattern.type || 'custom'}</small></span>
+                  <span className="pattern-severity"><StatusBadge status={pattern.severity} label={severityLabel(pattern.severity)} /></span>
+                  <StatusBadge status={pattern.enabled === false ? 'inactive' : 'active'} label={pattern.enabled === false ? 'Inactif' : 'Actif'} />
+                  <OverflowMenu label={`Actions pour ${pattern.name}`} items={[
+                    { label: 'Modifier', icon: 'edit', onSelect: () => onEditPattern(pattern) },
+                    { label: pattern.enabled === false ? 'Activer' : 'Désactiver', icon: 'power', onSelect: () => onTogglePattern(pattern) },
+                    { label: 'Supprimer', icon: 'trash', danger: true, onSelect: () => onDeletePattern(pattern.name) },
+                  ]} />
+                </div>
+              ))}
+            </div>
+          ) : <EmptyState icon="shield" title="Aucun pattern configuré" description="Créez une règle DLP pour commencer à protéger les échanges." action={<button type="button" className="admin-button primary" onClick={onCreatePattern}>Ajouter un pattern</button>} />}
+        </section>
+      ) : (
+        <section className="admin-card">
+          <SectionHeading title="Mots bannis globaux" context={`${globalWords.length} résultats`} action={<AddWordForm onSubmit={onAddWord} />} />
+          <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={wordSearch} onChange={(event) => setWordSearch(event.target.value)} placeholder="Rechercher un mot" aria-label="Rechercher les mots bannis" /></div></AdminToolbar>
+          {loading('globalWords') ? <Skeleton rows={5} /> : errorFor('globalWords') ? <ErrorState message={errorFor('globalWords')} /> : globalWords.length ? (
+            <div className="admin-compact-list">
+              {globalWords.map((item) => {
+                const word = item.word || item
+                return <div className="admin-compact-row word-row" key={item.id || word}><span className="row-main"><strong>{word}</strong><small>Règle globale</small></span><StatusBadge status="active" label="Appliqué" /><OverflowMenu label={`Actions pour ${word}`} items={[{ label: 'Supprimer', icon: 'trash', danger: true, onSelect: () => onDeleteWord(item.id, word) }]} /></div>
+              })}
+            </div>
+          ) : <EmptyState icon="shield" title="Aucun mot banni" description="Ajoutez un mot pour renforcer les règles globales." />}
+        </section>
+      )}
+
+      {selectedPattern && (
+        <DetailDrawer title={selectedPattern.name} description="Détails techniques du pattern DLP" onClose={() => setSelectedPattern(null)}>
+          <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { setSelectedPattern(null); onEditPattern(selectedPattern) }}><Icon name="edit" size={15} />Modifier</button><button type="button" className="admin-button secondary" onClick={() => onTogglePattern(selectedPattern)}>{selectedPattern.enabled === false ? 'Activer' : 'Désactiver'}</button></div>
+          <div className="admin-detail-grid">
+            <DetailValue label="Type" value={selectedPattern.type || 'custom'} />
+            <DetailValue label="Sévérité" value={<StatusBadge status={selectedPattern.severity} label={severityLabel(selectedPattern.severity)} />} />
+            <DetailValue label="Action" value={actionLabel(selectedPattern.action)} />
+            <DetailValue label="Statut" value={<StatusBadge status={selectedPattern.enabled === false ? 'inactive' : 'active'} label={selectedPattern.enabled === false ? 'Inactif' : 'Actif'} />} />
+            <DetailValue label="Validateur" value={selectedPattern.validator || 'Aucun'} />
+            <DetailValue label="Groupe de capture" value={selectedPattern.capture_group ?? selectedPattern.captureGroup ?? 'Aucun'} />
+          </div>
+          <div className="regex-detail"><div><span>Expression régulière</span><CopyButton value={selectedPattern.pattern} label="Copier l’expression" onCopied={onCopyExpression} onCopyError={onCopyError} /></div><code>{selectedPattern.pattern}</code></div>
+        </DetailDrawer>
+      )}
+    </div>
+  )
 }
-function AddWordForm({ onSubmit }) { const [value, setValue] = useState(''); return <form className="inline-add-form security-add-word-form" onSubmit={async (event) => { event.preventDefault(); if (!value.trim()) return; await onSubmit(value.trim()); setValue('') }}><input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Ajouter un mot…" aria-label="Nouveau mot banni" /><button className="admin-button primary" type="submit"><Icon name="plus" size={15} />Ajouter</button></form> }
+
+function AddWordForm({ onSubmit }) {
+  const [value, setValue] = useState('')
+  return <form className="inline-add-form security-add-word-form" onSubmit={async (event) => { event.preventDefault(); if (!value.trim()) return; await onSubmit(value.trim()); setValue('') }}><input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Ajouter un mot…" aria-label="Nouveau mot banni" /><button className="admin-button primary" type="submit"><Icon name="plus" size={15} />Ajouter</button></form>
+}
+
 function severityLabel(value) { return { low: 'Faible', medium: 'Moyenne', high: 'Élevée', critical: 'Critique' }[String(value || '').toLowerCase()] || value || '—' }
 function actionLabel(value) { return { MASK: 'Masquer', BLOCK: 'Bloquer' }[value] || value || '—' }
-
-function ModelsSection({ loading, errorFor, providers, allProviders, models, availableModels, providerSearch, setProviderSearch, modelSearch, setModelSearch, onCreateProvider, onEditProvider, onToggleProvider, onDeleteProvider, onCreateModel, onEditModel, onToggleModel, onDeleteModel, onTestModel, modelTestResults }) {
-  return <div className="admin-stack"><section className="admin-card"><SectionHeading kicker="FOURNISSEURS" title="Fournisseurs" context={`${providers.length} configuré${providers.length !== 1 ? 's' : ''}`} action={<button type="button" className="admin-button primary" onClick={onCreateProvider}><Icon name="plus" size={15} />Ajouter</button>} /><AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} placeholder="Rechercher un fournisseur" aria-label="Rechercher les fournisseurs" /></div></AdminToolbar>{loading('providers') ? <Skeleton rows={3} /> : errorFor('providers') ? <ErrorState message={errorFor('providers')} /> : providers.length ? <div className="admin-provider-list">{providers.map((provider) => <div className="admin-provider-row" key={provider.id}><span className="provider-mark">{String(provider.nom || provider.name || provider.code || '?').slice(0, 1).toUpperCase()}</span><div className="provider-copy"><strong>{provider.nom || provider.name || provider.code}</strong><small>{provider.code} · {provider.apiKeyEnvVar ? (provider.apiKeyConfigured ? 'Clé configurée' : 'Clé manquante') : 'Aucune variable de clé'}</small></div><StatusBadge status={provider.statut === 'ACTIF' ? 'active' : 'inactive'} label={provider.statut === 'ACTIF' ? 'Actif' : 'Inactif'} /><div className="table-actions"><button type="button" className="admin-text-button" onClick={() => onEditProvider(provider)}><Icon name="edit" size={14} />Modifier</button><button type="button" className="admin-text-button" onClick={() => onToggleProvider(provider)}>{provider.statut === 'ACTIF' ? 'Désactiver' : 'Activer'}</button><button type="button" className="admin-icon-button danger provider-delete-button" title="Supprimer" aria-label={`Supprimer ${provider.nom || provider.name || provider.code}`} onClick={() => onDeleteProvider(provider)}><Icon name="trash" size={15} /></button></div></div>)}</div> : <EmptyState icon="spark" title="Aucun fournisseur" description="Ajoutez un fournisseur pour gérer ses modèles." />}</section><section className="admin-card"><SectionHeading kicker="CONFIGURATION" title="Modèles administrés" context={`${models.length} configuré${models.length !== 1 ? 's' : ''}`} action={<button type="button" className="admin-button primary" onClick={onCreateModel}><Icon name="plus" size={15} />Configurer un modèle</button>} /><AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Rechercher par nom, alias ou modèle amont" aria-label="Rechercher les modèles" /></div></AdminToolbar>{loading('models') || loading('catalog') ? <Skeleton rows={4} /> : errorFor('models') || errorFor('catalog') ? <ErrorState message={errorFor('models') || errorFor('catalog')} /> : <ModelRows models={models} availableModels={availableModels} allProviders={allProviders} onEdit={onEditModel} onToggle={onToggleModel} onDelete={onDeleteModel} onTest={onTestModel} results={modelTestResults} />}</section></div>
+function providerLogoAlias(provider) {
+  const value = `${provider?.code || ''} ${provider?.nom || provider?.name || ''}`.toLowerCase()
+  if (value.includes('openai') || value.includes('gpt')) return 'secure-gpt'
+  if (value.includes('groq')) return 'secure-groq'
+  if (value.includes('gemini') || value.includes('google')) return 'secure-gemini'
+  if (value.includes('mistral')) return 'secure-mistral'
+  if (value.includes('claude') || value.includes('anthropic')) return 'secure-claude'
+  return provider?.code || provider?.nom || provider?.name || 'provider'
 }
-function ModelRows({ models, availableModels, onEdit, onToggle, onDelete, onTest, results }) { if (!models.length && !availableModels.length) return <EmptyState icon="spark" title="Aucun modèle disponible" description="Le catalogue Synapse ne retourne actuellement aucun modèle." />; return <div className="admin-model-list">{models.map((model) => <ModelRow key={model.id} model={model} adminModel={model} onEdit={onEdit} onToggle={onToggle} onDelete={onDelete} onTest={onTest} result={results[model.id]} />)}{availableModels.filter((model) => !models.some((item) => (item.aliasInterne || item.alias) === model.alias)).map((model) => <ModelRow key={`available-${model.alias}`} model={model} adminModel={null} />)}</div> }
-function ModelRow({ model, adminModel, onEdit, onToggle, onDelete, onTest, result }) { const alias = adminModel ? (adminModel.aliasInterne || adminModel.alias) : model.alias; const meta = modelCardMeta(alias); const title = adminModel?.nomAffichage || model.displayName || alias; const providerName = adminModel?.providerName || model?.providerName || modelProviderName(alias); return <article className="admin-model-row"><div className={`model-mark ${meta.tone || ''}`}><ModelLogo alias={alias} logoUrl={adminModel?.logoUrl || model?.logoUrl} className="admin-model-logo" fallback={meta.initials} /></div><div className="model-row-copy"><div className="model-row-title"><div><strong>{title}</strong><small>{providerName} · <code>{alias}</code></small></div><StatusBadge status={adminModel ? adminModel.statut : 'available'} label={adminModel ? (adminModel.statut === 'ACTIF' ? 'Actif' : 'Inactif') : 'Disponible'} /></div><p>{adminModel?.description || model.description || meta.description || 'Modèle LLM disponible dans Synapse.'}</p><div className="model-identifiers"><span>Alias : {alias}</span><span>Amont : {adminModel?.nomModeleProvider || 'Non configuré'}</span></div>{result && <div className="model-test-result"><StatusBadge status={['OK', 'CONNECTED'].includes(result.status) ? 'active' : 'inactive'} label={`Test : ${result.status}`} />{result.latencyMs != null && <span>{result.latencyMs} ms</span>}</div>}<div className="table-actions">{adminModel ? <><button type="button" className="admin-text-button" onClick={() => onTest(adminModel)}>Tester</button><button type="button" className="admin-text-button" onClick={() => onToggle(adminModel)}>{adminModel.statut === 'ACTIF' ? 'Désactiver' : 'Activer'}</button><button type="button" className="admin-text-button" onClick={() => onEdit(adminModel)}><Icon name="edit" size={14} />Modifier</button><button type="button" className="admin-icon-button danger model-delete-button" title="Supprimer" aria-label={`Supprimer ${title}`} onClick={() => onDelete(adminModel)}><Icon name="trash" size={14} /></button></> : <span className="available-note">Disponible dans le catalogue</span>}</div></div></article> }
+
+function ModelsSection({ loading, errorFor, providers, models, allModels, availableModels, providerSearch, setProviderSearch, modelSearch, setModelSearch, onCreateProvider, onEditProvider, onToggleProvider, onDeleteProvider, onCreateModel, onEditModel, onToggleModel, onDeleteModel, onTestModel, modelTestResults }) {
+  const [view, setView] = useState('models')
+  const [selectedModel, setSelectedModel] = useState(null)
+  const [selectedProvider, setSelectedProvider] = useState(null)
+  const configuredAliases = new Set(allModels.map((item) => item.aliasInterne || item.alias))
+  const query = modelSearch.trim().toLowerCase()
+  const catalogModels = availableModels.filter((item) => !configuredAliases.has(item.alias) && (!query || `${item.displayName || ''} ${item.alias || ''} ${item.providerName || ''}`.toLowerCase().includes(query)))
+  const modelRows = [...models.map((model) => ({ model, adminModel: model })), ...catalogModels.map((model) => ({ model, adminModel: null }))]
+
+  return (
+    <div className="admin-stack">
+      <AdminTabs value={view} onChange={setView} label="Catalogue LLM" tabs={[{ value: 'models', label: 'Modèles' }, { value: 'providers', label: 'Fournisseurs' }]} />
+
+      {view === 'models' ? (
+        <section className="admin-card">
+          <SectionHeading title="Modèles" context={`${modelRows.length} disponibles`} action={<button type="button" className="admin-button primary" onClick={onCreateModel}><Icon name="plus" size={15} />Ajouter un modèle</button>} />
+          <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Rechercher un modèle" aria-label="Rechercher les modèles" /></div></AdminToolbar>
+          {loading('models') || loading('catalog') ? <Skeleton rows={5} /> : errorFor('models') || errorFor('catalog') ? <ErrorState message={errorFor('models') || errorFor('catalog')} /> : modelRows.length ? (
+            <div className="admin-compact-list model-compact-list">
+              {modelRows.map(({ model, adminModel }) => {
+                const alias = adminModel ? (adminModel.aliasInterne || adminModel.alias) : model.alias
+                const meta = modelCardMeta(alias)
+                const title = adminModel?.nomAffichage || model.displayName || alias
+                const providerName = adminModel?.providerName || model.providerName || modelProviderName(alias)
+                return (
+                  <div key={adminModel?.id || `available-${alias}`} className="admin-compact-row interactive model-compact-row" role="button" tabIndex="0" onClick={() => setSelectedModel({ model, adminModel })} onKeyDown={(event) => handleRowKey(event, () => setSelectedModel({ model, adminModel }))}>
+                    <span className="model-mark"><ModelLogo alias={alias} logoUrl={adminModel?.logoUrl || model.logoUrl} className="admin-model-logo" fallback={meta.initials} /></span>
+                    <span className="row-main"><strong>{title}</strong><small>{providerName} · {adminModel?.description || model.description || 'Modèle LLM Synapse'}</small></span>
+                    <StatusBadge status={adminModel ? adminModel.statut : 'available'} label={adminModel ? (adminModel.statut === 'ACTIF' ? 'Actif' : 'Inactif') : 'Disponible'} />
+                    {adminModel ? <OverflowMenu label={`Actions pour ${title}`} items={[
+                      { label: 'Tester la connexion', icon: 'activity', onSelect: () => onTestModel(adminModel) },
+                      { label: 'Modifier', icon: 'edit', onSelect: () => onEditModel(adminModel) },
+                      { label: adminModel.statut === 'ACTIF' ? 'Désactiver' : 'Activer', icon: 'power', onSelect: () => onToggleModel(adminModel) },
+                      { label: 'Supprimer', icon: 'trash', danger: true, onSelect: () => onDeleteModel(adminModel) },
+                    ]} /> : <Icon name="chevron" size={16} />}
+                  </div>
+                )
+              })}
+            </div>
+          ) : <EmptyState icon="spark" title="Aucun modèle disponible" description="Le catalogue Synapse ne retourne actuellement aucun modèle." />}
+        </section>
+      ) : (
+        <section className="admin-card">
+          <SectionHeading title="Fournisseurs" context={`${providers.length} configurés`} action={<button type="button" className="admin-button primary" onClick={onCreateProvider}><Icon name="plus" size={15} />Ajouter un fournisseur</button>} />
+          <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} placeholder="Rechercher un fournisseur" aria-label="Rechercher les fournisseurs" /></div></AdminToolbar>
+          {loading('providers') ? <Skeleton rows={4} /> : errorFor('providers') ? <ErrorState message={errorFor('providers')} /> : providers.length ? (
+            <div className="admin-compact-list">
+              {providers.map((provider) => {
+                const name = provider.nom || provider.name || provider.code
+                const associatedModels = allModels.filter((model) => String(model.providerId) === String(provider.id) || model.providerName === name)
+                const representativeModel = associatedModels.find((model) => model.logoUrl) || associatedModels[0]
+                const logoAlias = representativeModel?.aliasInterne || representativeModel?.alias || providerLogoAlias(provider)
+                const logoFallback = modelCardMeta(logoAlias).initials
+                const count = associatedModels.length
+                return (
+                  <div key={provider.id} className="admin-compact-row interactive provider-compact-row" role="button" tabIndex="0" onClick={() => setSelectedProvider(provider)} onKeyDown={(event) => handleRowKey(event, () => setSelectedProvider(provider))}>
+                    <span className="provider-mark"><ModelLogo alias={logoAlias} logoUrl={representativeModel?.logoUrl} className="admin-provider-logo" fallback={logoFallback} /></span>
+                    <span className="row-main"><strong>{name}</strong><small>{provider.code} · {count} modèle{count !== 1 ? 's' : ''}</small></span>
+                    <StatusBadge status={provider.statut === 'ACTIF' ? 'active' : 'inactive'} label={provider.statut === 'ACTIF' ? 'Actif' : 'Inactif'} />
+                    <OverflowMenu label={`Actions pour ${name}`} items={[
+                      { label: 'Modifier', icon: 'edit', onSelect: () => onEditProvider(provider) },
+                      { label: provider.statut === 'ACTIF' ? 'Désactiver' : 'Activer', icon: 'power', onSelect: () => onToggleProvider(provider) },
+                      { label: 'Supprimer', icon: 'trash', danger: true, onSelect: () => onDeleteProvider(provider) },
+                    ]} />
+                  </div>
+                )
+              })}
+            </div>
+          ) : <EmptyState icon="spark" title="Aucun fournisseur" description="Ajoutez un fournisseur pour gérer ses modèles." />}
+        </section>
+      )}
+
+      {selectedModel && <ModelDetailDrawer selection={selectedModel} result={selectedModel.adminModel ? modelTestResults[selectedModel.adminModel.id] : null} onClose={() => setSelectedModel(null)} onEdit={onEditModel} onTest={onTestModel} />}
+      {selectedProvider && (
+        <DetailDrawer title={selectedProvider.nom || selectedProvider.name || selectedProvider.code} description="Configuration du fournisseur" onClose={() => setSelectedProvider(null)}>
+          <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { setSelectedProvider(null); onEditProvider(selectedProvider) }}><Icon name="edit" size={15} />Modifier</button></div>
+          <div className="admin-detail-grid">
+            <DetailValue label="Code" value={selectedProvider.code} />
+            <DetailValue label="Statut" value={<StatusBadge status={selectedProvider.statut === 'ACTIF' ? 'active' : 'inactive'} label={selectedProvider.statut === 'ACTIF' ? 'Actif' : 'Inactif'} />} />
+            <DetailValue label="Variable de clé API" value={selectedProvider.apiKeyEnvVar || 'Non configurée'} wide />
+            <DetailValue label="État de la clé" value={selectedProvider.apiKeyEnvVar ? (selectedProvider.apiKeyConfigured ? 'Configurée dans l’environnement' : 'Référence présente, clé indisponible') : 'Non configurée'} wide />
+          </div>
+          <div className="drawer-section"><h3>Modèles associés</h3><ChipList items={allModels.filter((model) => String(model.providerId) === String(selectedProvider.id)).map((model) => ({ id: model.id, label: model.nomAffichage || model.aliasInterne || model.alias }))} empty="Aucun modèle associé." labelKey="label" /></div>
+        </DetailDrawer>
+      )}
+    </div>
+  )
+}
+
+function ModelDetailDrawer({ selection, result, onClose, onEdit, onTest }) {
+  const { model, adminModel } = selection
+  const alias = adminModel ? (adminModel.aliasInterne || adminModel.alias) : model.alias
+  const meta = modelCardMeta(alias)
+  const title = adminModel?.nomAffichage || model.displayName || alias
+  const providerName = adminModel?.providerName || model.providerName || modelProviderName(alias)
+  return (
+    <DetailDrawer title={title} description={providerName} onClose={onClose}>
+      {adminModel && <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { onClose(); onEdit(adminModel) }}><Icon name="edit" size={15} />Modifier</button><button type="button" className="admin-button secondary" onClick={() => onTest(adminModel)}>Tester la connexion</button></div>}
+      <div className="drawer-model-heading"><span className="model-mark large"><ModelLogo alias={alias} logoUrl={adminModel?.logoUrl || model.logoUrl} className="admin-model-logo" fallback={meta.initials} /></span><div><h3>{title}</h3><p>{adminModel?.description || model.description || meta.description || 'Modèle LLM disponible dans Synapse.'}</p></div></div>
+      <div className="admin-detail-grid">
+        <DetailValue label="Statut" value={<StatusBadge status={adminModel ? adminModel.statut : 'available'} label={adminModel ? (adminModel.statut === 'ACTIF' ? 'Actif' : 'Inactif') : 'Disponible'} />} />
+        <DetailValue label="Fournisseur" value={providerName} />
+        <DetailValue label="Alias interne" value={alias} />
+        <DetailValue label="Identifiant fournisseur" value={adminModel?.nomModeleProvider || 'Non configuré'} />
+        <DetailValue label="Logo" value={adminModel?.logoUrl ? 'Personnalisé' : 'Logo par défaut'} />
+        <DetailValue label="Dernier test" value={result?.testedAt ? formatDate(result.testedAt) : 'Non testé'} />
+        {result && <DetailValue label="Résultat du test" value={<StatusBadge status={['OK', 'CONNECTED'].includes(result.status) ? 'success' : 'error'} label={result.status} />} />}
+        {result?.latencyMs != null && <DetailValue label="Latence" value={`${result.latencyMs} ms`} />}
+      </div>
+    </DetailDrawer>
+  )
+}
 
 function UsersSection({ loading, errorFor, users, allUsers, search, setSearch, selectedUser, onSelectUser, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
-  return <div className="admin-users-layout"><section className="admin-card admin-users-list-card"><SectionHeading kicker="COMPTES" title="Utilisateurs" context={`${users.length} résultat${users.length !== 1 ? 's' : ''}`} /><AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nom, email ou identifiant" aria-label="Rechercher les utilisateurs" /></div></AdminToolbar>{loading('users') ? <Skeleton rows={5} /> : errorFor('users') ? <ErrorState message={errorFor('users')} /> : users.length ? <div className="admin-user-list" role="listbox" aria-label="Utilisateurs">{users.map((user) => <button key={user.id} type="button" role="option" aria-selected={selectedUser?.id === user.id} className={`admin-user-row ${selectedUser?.id === user.id ? 'selected' : ''}`} onClick={() => onSelectUser(user)}><span className="user-mark">{String(user.nomAffichage || '?').slice(0, 1).toUpperCase()}</span><span className="user-row-copy"><strong>{user.nomAffichage || 'Utilisateur'}</strong><small>{user.email || 'Compte Synapse'}</small></span><StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} /></button>)}</div> : <EmptyState icon="users" title="Aucun utilisateur" description={allUsers.length ? 'Aucun résultat pour cette recherche.' : 'Les comptes apparaîtront ici lorsqu’ils seront disponibles.'} />}</section><UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} user={selectedUser} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} /></div>
+  return (
+    <section className="admin-card">
+      <SectionHeading title="Annuaire des utilisateurs" context={`${users.length} résultats`} />
+      <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nom ou adresse e-mail" aria-label="Rechercher les utilisateurs" /></div></AdminToolbar>
+      {loading('users') ? <Skeleton rows={6} /> : errorFor('users') ? <ErrorState message={errorFor('users')} /> : users.length ? (
+        <div className="admin-compact-list user-directory">
+          {users.map((user) => {
+            return (
+              <div key={user.id} className="admin-compact-row interactive user-directory-row" role="button" tabIndex="0" onClick={() => onSelectUser(user)} onKeyDown={(event) => handleRowKey(event, () => onSelectUser(user))}>
+                <UserAvatar user={user} />
+                <span className="row-main"><strong>{user.nomAffichage || 'Utilisateur'}</strong><small>{user.email || 'Compte Synapse'}</small></span>
+                <StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} />
+                <Icon name="chevron" size={16} />
+              </div>
+            )
+          })}
+        </div>
+      ) : <EmptyState icon="users" title="Aucun utilisateur" description={allUsers.length ? 'Aucun résultat pour cette recherche.' : 'Les comptes apparaîtront ici lorsqu’ils seront disponibles.'} />}
+      <UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} user={selectedUser} onClose={() => onSelectUser(null)} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} />
+    </section>
+  )
 }
-function UserDetails({ loading, error, user, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) { if (!user) return <section className="admin-card admin-detail-empty"><EmptyState icon="users" title="Sélectionnez un utilisateur" description="Choisissez un compte pour afficher ses accès, restrictions et règles personnalisées." /></section>; const canManage = isUuid(user.externalId); return <section className="admin-card admin-user-detail"><div className="user-profile"><span className="user-mark large">{String(user.nomAffichage || '?').slice(0, 1).toUpperCase()}</span><div><div className="admin-card-kicker">COMPTE</div><h2>{user.nomAffichage || 'Utilisateur'}</h2><p>{user.email || 'Compte Synapse'}</p></div><div className="user-profile-actions"><StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} />{user.keycloakManaged && <button type="button" className="admin-button secondary" onClick={() => onToggleUser(user)}>{user.enabled !== false ? 'Désactiver' : 'Activer'}</button>}</div></div><div className="user-summary"><div><strong>{selectedRoles.length}</strong><span>Rôle</span></div><div><strong>{restrictions.length}</strong><span>Restrictions</span></div><div><strong>{bannedWords.length}</strong><span>Mots bannis</span></div></div>{loading ? <Skeleton rows={3} /> : error ? <ErrorState message={error} /> : <><DetailSection title="Rôle" kicker="ACCÈS"><div className="role-chip-grid">{keycloakRoles.length ? keycloakRoles.map((role) => { const checked = selectedRoles.includes(role.name); return <label key={role.id || role.name} className={`role-check ${checked ? 'selected' : ''}`}><input type="radio" name="managed-user-role" checked={checked} onChange={() => setSelectedRoles([role.name])} /><span>{role.name}</span></label> }) : keycloakRolesError ? <div className="role-sync-warning"><span>{keycloakRolesError}</span><button type="button" className="admin-button secondary" onClick={onRetryKeycloakRoles}>Réessayer</button></div> : <span className="muted">Aucun rôle n’est disponible dans Keycloak.</span>}</div>{keycloakRoles.length > 0 && <button type="button" className="admin-button primary" onClick={onSaveRoles} disabled={!user.keycloakManaged || selectedRoles.length !== 1}>Enregistrer le rôle</button>}</DetailSection><DetailSection title="Restrictions de modèles" kicker="AUTORISATIONS" count={restrictions.length}><div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} disabled={!canManage} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!canManage || !selectedModel} title={!canManage ? 'Un UUID Keycloak est requis.' : undefined} onClick={onAddRestriction}>Ajouter</button></div>{!canManage && <p className="helper-text">Les restrictions personnalisées nécessitent l’identifiant Keycloak du compte.</p>}<ChipList items={restrictions} empty="Aucune restriction personnalisée." labelKey="llmModelAlias" onRemove={onRemoveRestriction} /></DetailSection><DetailSection title="Mots bannis spécifiques" kicker="DLP" count={bannedWords.length}><div className="inline-add-form"><input value={userWord} onChange={(event) => setUserWord(event.target.value)} placeholder="Ajouter un mot ou une expression" disabled={!canManage} aria-label="Nouveau mot banni utilisateur" /><button type="button" className="admin-button secondary" disabled={!canManage || !userWord.trim()} onClick={onAddWord}>Ajouter</button></div><ChipList items={bannedWords} empty="Aucun mot banni spécifique." labelKey="word" onRemove={onRemoveWord} /></DetailSection></>}</section> }
-function DetailSection({ kicker, title, count, children }) { return <div className="detail-section"><div className="detail-section-heading"><div><div className="admin-card-kicker">{formatKicker(kicker)}</div><h3>{title}</h3></div>{count != null && <span className="count-pill">{count}</span>}</div>{children}</div> }
-function ChipList({ items, empty, labelKey, onRemove }) { return items.length ? <div className="chip-list">{items.map((item) => <span className="restriction-chip" key={item.id || item[labelKey]}>{item[labelKey]}<button type="button" onClick={() => onRemove(item)} aria-label={`Supprimer ${item[labelKey]}`}><Icon name="close" size={13} /></button></span>)}</div> : <span className="muted">{empty}</span> }
 
-export function RolesSection({ loading, errorFor, roles, rolesLoading, rolesError, onRetryRoles, role, setRole, restrictions, bannedWords, models, selectedModel, setSelectedModel, word, setWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord }) {
-  return <div className="admin-stack"><section className="admin-card"><SectionHeading kicker="AUTORISATIONS HÉRITÉES" title="Règles par rôle" context={roles.length ? `${roles.length} rôle${roles.length !== 1 ? 's' : ''} disponible${roles.length !== 1 ? 's' : ''}` : 'Rôles Keycloak'} />{rolesLoading ? <Skeleton rows={2} /> : rolesError ? <ErrorState message={rolesError} onRetry={onRetryRoles} /> : roles.length ? <><div className="role-selector" role="tablist" aria-label="Sélectionner un rôle">{roles.map((item) => <button key={item} type="button" role="tab" aria-selected={role === item} className={role === item ? 'active' : ''} onClick={() => setRole(item)}>{item}</button>)}</div><div className="role-context"><span className="provider-mark"><Icon name="key" size={17} /></span><div><strong>{role}</strong><small>Restrictions appliquées à ce rôle</small></div></div>{loading ? <Skeleton rows={4} /> : errorFor('roles') ? <ErrorState message={errorFor('roles')} onRetry={() => onRetryRoles()} /> : <div className="role-columns"><DetailSection title="Modèles restreints" kicker="MODÈLES" count={restrictions.length}><div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!selectedModel} onClick={onAddRestriction}>Ajouter</button></div><ChipList items={restrictions} empty="Aucune restriction de modèle." labelKey="llmModelAlias" onRemove={onRemoveRestriction} /></DetailSection><DetailSection title="Mots bannis" kicker="DLP" count={bannedWords.length}><div className="inline-add-form"><input value={word} onChange={(event) => setWord(event.target.value)} placeholder="Mot ou expression" aria-label="Nouveau mot banni pour le rôle" /><button type="button" className="admin-button secondary" disabled={!word.trim()} onClick={onAddWord}>Ajouter</button></div><ChipList items={bannedWords} empty="Aucun mot banni pour ce rôle." labelKey="word" onRemove={onRemoveWord} /></DetailSection></div>}</> : <EmptyState icon="key" title="Aucun rôle disponible" description="Les rôles affichés ici proviennent de Keycloak. Créez ou importez un rôle dans l’environnement de test, puis réessayez." action={<button type="button" className="admin-button secondary" onClick={onRetryRoles}>Réessayer</button>} />}</section></div>
+function UserDetails({ loading, error, user, onClose, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+  if (!user) return null
+  const canManage = isUuid(user.externalId)
+  const mainRole = roleLabel(selectedRoles[0] || user.roles?.[0] || user.realmRoles?.[0])
+
+  return (
+    <DetailDrawer
+      title={user.nomAffichage || 'Utilisateur'}
+      onClose={onClose}
+      header={<div className="admin-drawer-profile"><UserAvatar user={user} large /><div><h2>{user.nomAffichage || 'Utilisateur'}</h2><p>{user.email || 'Compte Synapse'}</p><div><StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} /><span>{mainRole}</span></div></div></div>}
+    >
+      <div className="drawer-action-row drawer-action-row-end">
+        {user.keycloakManaged && <button type="button" className="admin-button secondary" onClick={() => onToggleUser(user)}>{user.enabled !== false ? 'Désactiver le compte' : 'Activer le compte'}</button>}
+      </div>
+      {loading ? <QuietLoading /> : error ? <ErrorState message={error} /> : (
+        <div className="admin-collapsible-list">
+          <CollapsibleSection title="Compte et rôles" summary={selectedRoles.length ? `${selectedRoles.length} rôle attribué` : 'Aucun rôle attribué'} count={selectedRoles.length} defaultOpen>
+            <div className="role-chip-grid">
+              {keycloakRoles.length ? keycloakRoles.map((role) => {
+                const checked = selectedRoles.includes(role.name)
+                return <label key={role.id || role.name} className={`role-check ${checked ? 'selected' : ''}`}><input type="radio" name="managed-user-role" checked={checked} onChange={() => setSelectedRoles([role.name])} /><span>{roleLabel(role.name)}</span></label>
+              }) : keycloakRolesError ? <div className="role-sync-warning"><span>{keycloakRolesError}</span><button type="button" className="admin-button secondary" onClick={onRetryKeycloakRoles}>Réessayer</button></div> : <span className="muted">Aucun rôle n’est disponible dans Keycloak.</span>}
+            </div>
+            {keycloakRoles.length > 0 && <button type="button" className="admin-button primary" onClick={onSaveRoles} disabled={!user.keycloakManaged || selectedRoles.length !== 1}>Enregistrer le rôle</button>}
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Modèles restreints" summary={`${restrictions.length} modèle${restrictions.length !== 1 ? 's' : ''} restreint${restrictions.length !== 1 ? 's' : ''}`} count={restrictions.length}>
+            <div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} disabled={!canManage} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!canManage || !selectedModel} title={!canManage ? 'Un UUID Keycloak est requis.' : undefined} onClick={onAddRestriction}>Ajouter</button></div>
+            {!canManage && <p className="helper-text">Les restrictions personnalisées nécessitent l’identifiant Keycloak du compte.</p>}
+            <ChipList items={restrictions} empty="Aucune restriction personnalisée." labelKey="llmModelAlias" onRemove={onRemoveRestriction} />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Mots bannis personnels" summary={`${bannedWords.length} mot${bannedWords.length !== 1 ? 's' : ''}`} count={bannedWords.length}>
+            <div className="inline-add-form"><input value={userWord} onChange={(event) => setUserWord(event.target.value)} placeholder="Ajouter un mot ou une expression" disabled={!canManage} aria-label="Nouveau mot banni utilisateur" /><button type="button" className="admin-button secondary" disabled={!canManage || !userWord.trim()} onClick={onAddWord}>Ajouter</button></div>
+            <ChipList items={bannedWords} empty="Aucun mot banni spécifique." labelKey="word" onRemove={onRemoveWord} />
+          </CollapsibleSection>
+        </div>
+      )}
+    </DetailDrawer>
+  )
+}
+
+function ChipList({ items, empty, labelKey, onRemove }) {
+  return items.length ? <div className="chip-list">{items.map((item) => <span className="restriction-chip" key={item.id || item[labelKey]}>{item[labelKey]}{onRemove && <button type="button" onClick={() => onRemove(item)} aria-label={`Supprimer ${item[labelKey]}`}><Icon name="close" size={13} /></button>}</span>)}</div> : <span className="muted">{empty}</span>
+}
+
+function QuietLoading() {
+  return <div className="admin-quiet-loading" role="status"><span className="sr-only">Chargement des informations…</span></div>
+}
+
+export function RolesSection({ loading, errorFor, roles, roleCounts = {}, rolesLoading, rolesError, onRetryRoles, role, setRole, restrictions, bannedWords, models, selectedModel, setSelectedModel, word, setWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord }) {
+  return (
+    <section className="admin-card">
+      <SectionHeading title="Rôles Keycloak" context={roles.length ? `${roles.length} rôles` : undefined} />
+      {rolesLoading ? <Skeleton rows={4} /> : rolesError ? <ErrorState message={rolesError} onRetry={onRetryRoles} /> : roles.length ? (
+        <div className="admin-compact-list role-directory">
+          {roles.map((item) => {
+            const counts = roleCounts[item] || {}
+            return (
+              <div key={item} className="admin-compact-row interactive" role="button" tabIndex="0" onClick={() => setRole(item)} onKeyDown={(event) => handleRowKey(event, () => setRole(item))}>
+                <span className="row-main"><strong>{roleLabel(item)}</strong><small>Rôle synchronisé avec Keycloak</small></span>
+                <span className="role-count">{counts.restrictions == null ? '—' : counts.restrictions}<small>modèles</small></span>
+                <span className="role-count">{counts.words == null ? '—' : counts.words}<small>mots bannis</small></span>
+                <Icon name="chevron" size={16} />
+              </div>
+            )
+          })}
+        </div>
+      ) : <EmptyState icon="key" title="Aucun rôle disponible" description="Les rôles administrables proviennent de Keycloak." action={<button type="button" className="admin-button secondary" onClick={onRetryRoles}>Réessayer</button>} />}
+
+      {role && (
+        <DetailDrawer title={roleLabel(role)} description="Restrictions héritées par le rôle" onClose={() => setRole('')}>
+          {loading ? <QuietLoading /> : errorFor('roles') ? <ErrorState message={errorFor('roles')} onRetry={onRetryRoles} /> : (
+            <div className="admin-collapsible-list">
+              <CollapsibleSection title="Modèles restreints" summary={`${restrictions.length} restriction${restrictions.length !== 1 ? 's' : ''}`} count={restrictions.length} defaultOpen>
+                <div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!selectedModel} onClick={onAddRestriction}>Ajouter</button></div>
+                <ChipList items={restrictions} empty="Aucune restriction de modèle." labelKey="llmModelAlias" onRemove={onRemoveRestriction} />
+              </CollapsibleSection>
+              <CollapsibleSection title="Mots bannis hérités" summary={`${bannedWords.length} mot${bannedWords.length !== 1 ? 's' : ''}`} count={bannedWords.length}>
+                <div className="inline-add-form"><input value={word} onChange={(event) => setWord(event.target.value)} placeholder="Mot ou expression" aria-label="Nouveau mot banni pour le rôle" /><button type="button" className="admin-button secondary" disabled={!word.trim()} onClick={onAddWord}>Ajouter</button></div>
+                <ChipList items={bannedWords} empty="Aucun mot banni pour ce rôle." labelKey="word" onRemove={onRemoveWord} />
+              </CollapsibleSection>
+            </div>
+          )}
+        </DetailDrawer>
+      )}
+    </section>
+  )
 }
 
 const AUDIT_ACTION_OPTIONS = [
@@ -421,27 +824,68 @@ const AUDIT_ENTITY_OPTIONS = [
 function AuditSection({ loading, error, view, setView, logs, messages, users, search, setSearch, action, setAction, entity, setEntity, date, setDate, filteredSearch, setFilteredSearch, filteredAction, setFilteredAction, filteredUserId, setFilteredUserId, filteredDate, setFilteredDate, expandedId, setExpandedId, page, totalPages, onPageChange }) {
   const rows = view === 'permissions' ? logs : messages
   const actionOptions = view === 'permissions' ? AUDIT_ACTION_OPTIONS : FILTERED_ACTION_OPTIONS
+  const currentSearch = view === 'permissions' ? search : filteredSearch
+  const currentAction = view === 'permissions' ? action : filteredAction
+  const currentDate = view === 'permissions' ? date : filteredDate
+  const activeFilterCount = [currentAction, currentDate, view === 'permissions' ? entity : filteredUserId].filter(Boolean).length
   const userNamesById = useMemo(() => new Map(users.flatMap((user) => {
     const id = user.externalId || user.id
     const name = user.nomAffichage || user.username || user.email
     return id && name ? [[String(id), name]] : []
   })), [users])
   const resolveUserName = (id, fallback) => id ? (userNamesById.get(String(id)) || fallback) : fallback
-  return <div className="admin-stack">
-    <div className="audit-view-switch" role="tablist" aria-label="Vue du journal"><button type="button" role="tab" aria-selected={view === 'permissions'} className={view === 'permissions' ? 'active' : ''} onClick={() => setView('permissions')}>Autorisations</button><button type="button" role="tab" aria-selected={view === 'filtered'} className={view === 'filtered' ? 'active' : ''} onClick={() => setView('filtered')}>Messages bloqués / masqués</button></div>
-    <section className="admin-card">
-      <AdminToolbar>
-        <div className="admin-search-field"><Icon name="search" size={16} /><input value={view === 'permissions' ? search : filteredSearch} onChange={(event) => view === 'permissions' ? setSearch(event.target.value) : setFilteredSearch(event.target.value)} placeholder="Rechercher dans le journal" aria-label="Rechercher dans le journal" /></div>
-        <div className="admin-filter-field"><span>Action</span><SelectDropdown value={view === 'permissions' ? action : filteredAction} options={actionOptions.map(([value, label]) => ({ value, label }))} onChange={(value) => view === 'permissions' ? setAction(value) : setFilteredAction(value)} ariaLabel="Filtrer par action" className="admin-custom-dropdown compact" /></div>
-        {view === 'permissions'
-          ? <div className="admin-filter-field"><span>Entité</span><SelectDropdown value={entity} options={AUDIT_ENTITY_OPTIONS.map(([value, label]) => ({ value, label }))} onChange={setEntity} ariaLabel="Filtrer par entité" className="admin-custom-dropdown compact" /></div>
-          : <label className="admin-filter-field"><span>Utilisateur</span><input className="admin-input compact" value={filteredUserId} onChange={(event) => setFilteredUserId(event.target.value)} placeholder="Identifiant" /></label>}
-        <label className="admin-filter-field admin-date-filter"><span>Date</span><input className="admin-input compact" type="date" value={view === 'permissions' ? date : filteredDate} onChange={(event) => view === 'permissions' ? setDate(event.target.value) : setFilteredDate(event.target.value)} /></label>
-      </AdminToolbar>
-      {loading ? <Skeleton rows={6} /> : error ? <ErrorState message={error} /> : rows.length ? <div className="admin-audit-table-wrap"><table className="admin-table audit-table"><thead><tr><th>Ressource</th><th>Action</th><th>Acteur / cible</th><th>Date</th><th>Statut</th><th><span className="sr-only">Détails</span></th></tr></thead><tbody>{rows.map((row) => { const id = row.id || row.timestamp; const expanded = expandedId === id; const isMessage = view === 'filtered'; const isUserTarget = !isMessage && row.entityName === 'KEYCLOAK_USER'; const userId = isMessage ? row.userKeycloakId : row.performedBy; const userName = resolveUserName(userId, isMessage || userId ? 'Utilisateur inconnu' : 'Système'); const resourceDetail = isMessage ? (row.detectedTypes || 'Catégorie non précisée') : isUserTarget ? resolveUserName(row.entityId, 'Utilisateur inconnu') : (row.entityId || '—'); return <><tr key={id} className={expanded ? 'expanded' : ''}><td><strong>{isMessage ? (row.reason || 'Événement DLP') : formatEntity(row.entityName)}</strong><small>{resourceDetail}</small></td><td><StatusBadge status={row.action} label={formatAction(row.action)} /></td><td><span title={userId || undefined}>{userName}</span></td><td><time dateTime={row.timestamp}>{formatDate(row.timestamp)}</time></td><td><StatusBadge status={isMessage ? row.requestStatus || row.action : row.action} label={isMessage ? formatAction(row.requestStatus || row.action) : 'Enregistré'} /></td><td><button type="button" className="admin-icon-button" aria-expanded={expanded} aria-label={expanded ? 'Réduire les détails' : 'Afficher les détails'} onClick={() => setExpandedId(expanded ? null : id)}><Icon name="chevron" size={16} /></button></td></tr>{expanded && <tr className="audit-detail-row" key={`${id}-details`}><td colSpan="6"><div><strong>{isMessage ? 'Message sécurisé' : 'Détails techniques'}</strong><span>{isMessage ? `Détections : ${row.detectionCount ?? 0}` : `${isUserTarget ? 'Utilisateur' : 'Identifiant'} : ${resourceDetail}`}</span>{isMessage && <span className="safe-content">{row.redactedContent ? `Version sécurisée : ${row.redactedContent}` : 'Version sécurisée indisponible pour cet ancien événement.'}</span>}{!isMessage && <small>La donnée originale n’est pas affichée dans l’interface d’administration.</small>}</div></td></tr>}</> })}</tbody></table></div> : <EmptyState icon="activity" title="Aucun événement" description={view === 'permissions' ? 'Les changements d’autorisation apparaîtront ici.' : 'Aucun message filtré ne correspond à ces critères.'} />}
-      <Pagination page={page} totalPages={totalPages} onChange={onPageChange} />
-    </section>
-  </div>
+  const resetFilters = () => {
+    if (view === 'permissions') { setAction(''); setEntity(''); setDate('') }
+    else { setFilteredAction(''); setFilteredUserId(''); setFilteredDate('') }
+  }
+
+  return (
+    <div className="admin-stack">
+      <AdminTabs value={view} onChange={(next) => { setView(next); setExpandedId(null) }} label="Vue du journal" tabs={[{ value: 'permissions', label: 'Modifications d’autorisations' }, { value: 'filtered', label: 'Messages filtrés' }]} />
+      <section className="admin-card">
+        <SectionHeading title={view === 'permissions' ? 'Modifications d’autorisations' : 'Messages filtrés'} context={`${rows.length} résultats sur cette page`} />
+        <AdminToolbar>
+          <div className="admin-search-field"><Icon name="search" size={16} /><input value={currentSearch} onChange={(event) => view === 'permissions' ? setSearch(event.target.value) : setFilteredSearch(event.target.value)} placeholder="Rechercher dans le journal" aria-label="Rechercher dans le journal" /></div>
+          <FilterPopover activeCount={activeFilterCount}>
+            <div className="filter-popover-heading"><strong>Filtres</strong><button type="button" onClick={resetFilters}>Réinitialiser</button></div>
+            <label className="admin-field"><span>Action</span><SelectDropdown value={currentAction} options={actionOptions.map(([value, label]) => ({ value, label }))} onChange={(value) => view === 'permissions' ? setAction(value) : setFilteredAction(value)} ariaLabel="Filtrer par action" className="admin-custom-dropdown" /></label>
+            {view === 'permissions' ? (
+              <label className="admin-field"><span>Entité</span><SelectDropdown value={entity} options={AUDIT_ENTITY_OPTIONS.map(([value, label]) => ({ value, label }))} onChange={setEntity} ariaLabel="Filtrer par entité" className="admin-custom-dropdown" /></label>
+            ) : <label className="admin-field"><span>Utilisateur</span><input value={filteredUserId} onChange={(event) => setFilteredUserId(event.target.value)} placeholder="Identifiant Keycloak" /></label>}
+            <label className="admin-field"><span>Date</span><input type="date" value={currentDate} onChange={(event) => view === 'permissions' ? setDate(event.target.value) : setFilteredDate(event.target.value)} /></label>
+          </FilterPopover>
+        </AdminToolbar>
+
+        {activeFilterCount > 0 && <div className="active-filter-line"><span>{activeFilterCount} filtre{activeFilterCount !== 1 ? 's' : ''} actif{activeFilterCount !== 1 ? 's' : ''}</span><button type="button" onClick={resetFilters}>Effacer</button></div>}
+
+        {loading ? <Skeleton rows={6} /> : error ? <ErrorState message={error} /> : rows.length ? (
+          <div className="admin-compact-list audit-list">
+            {rows.map((row) => {
+              const id = row.id || row.timestamp
+              const logId = row.id || '—'
+              const expanded = expandedId === id
+              const isMessage = view === 'filtered'
+              const isUserTarget = !isMessage && row.entityName === 'KEYCLOAK_USER'
+              const userId = isMessage ? row.userKeycloakId : row.performedBy
+              const userName = resolveUserName(userId, isMessage || userId ? 'Utilisateur inconnu' : 'Système')
+              const resourceDetail = isMessage ? (row.detectedTypes || 'Catégorie non précisée') : isUserTarget ? resolveUserName(row.entityId, 'Utilisateur inconnu') : (row.entityId || '—')
+              const status = isMessage ? row.requestStatus || row.action : row.action
+              return (
+                <div key={id} className={`audit-item ${expanded ? 'expanded' : ''}`}>
+                  <div className={`admin-compact-row ${isMessage ? 'interactive message-audit-row' : 'permission-audit-row'}`} {...(isMessage ? { role: 'button', tabIndex: 0, 'aria-expanded': expanded, onClick: () => setExpandedId(expanded ? null : id), onKeyDown: (event) => handleRowKey(event, () => setExpandedId(expanded ? null : id)) } : {})}>
+                    <span className="row-main"><strong>{isMessage ? (row.reason || 'Événement DLP') : formatEntity(row.entityName)}</strong><small>{isMessage ? resourceDetail : `Journal #${logId} · Cible ${resourceDetail}`}</small></span>
+                    {isMessage ? <><StatusBadge status={row.action} label={formatAction(row.action)} className="audit-action-badge" /><span className="audit-actor">{userName}</span><time dateTime={row.timestamp}>{formatDate(row.timestamp)}</time><StatusBadge status={status} label={formatAction(status)} className="audit-state-badge" /><Icon name="chevron" size={16} /></> : <span className="audit-permission-meta"><StatusBadge status={row.action} label={formatAction(row.action)} className="audit-action-badge" /><span className="audit-actor">{userName}</span><time dateTime={row.timestamp}>{formatDate(row.timestamp)}</time></span>}
+                  </div>
+                  {isMessage && expanded && <div className="audit-detail-panel"><div className="admin-detail-grid"><DetailValue label="ID du journal" value={logId} /><DetailValue label="Catégorie" value={resourceDetail} /><DetailValue label="Détections" value={row.detectionCount ?? 0} /></div><SafeContent value={row.redactedContent} /></div>}
+                </div>
+              )
+            })}
+          </div>
+        ) : <EmptyState icon="activity" title="Aucun événement" description={view === 'permissions' ? 'Les changements d’autorisation apparaîtront ici.' : 'Aucun message filtré ne correspond à ces critères.'} />}
+        <Pagination page={page} totalPages={totalPages} onChange={onPageChange} />
+      </section>
+    </div>
+  )
 }
 function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) }
 function dateRange(value) { if (!value) return {}; const [year, month, day] = value.split('-').map(Number); if (!year || !month || !day) return {}; return { from: new Date(year, month - 1, day, 0, 0, 0, 0).toISOString(), to: new Date(year, month - 1, day, 23, 59, 59, 999).toISOString() } }
@@ -451,8 +895,12 @@ function ProviderModal({ data, busy, onClose, onSave }) { const [form, setForm] 
 function ModelModal({ data, providers, busy, onClose, onSave }) {
   const [form, setForm] = useState(data)
   const [logoError, setLogoError] = useState('')
+  const initialLogoIsLocal = data.logoUrl?.startsWith('data:')
+  const [logoMode, setLogoMode] = useState(initialLogoIsLocal ? 'local' : 'url')
+  const [urlLogo, setUrlLogo] = useState(initialLogoIsLocal ? '' : (data.logoUrl || ''))
+  const [localLogo, setLocalLogo] = useState(initialLogoIsLocal ? data.logoUrl : '')
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const localLogo = form.logoUrl?.startsWith('data:')
+  const selectedLogo = logoMode === 'local' ? localLogo : urlLogo
 
   const selectLogoFile = (event) => {
     const file = event.target.files?.[0]
@@ -467,14 +915,32 @@ function ModelModal({ data, providers, busy, onClose, onSave }) {
     }
     const reader = new FileReader()
     reader.onload = () => {
-      update('logoUrl', String(reader.result || ''))
+      setLocalLogo(String(reader.result || ''))
       setLogoError('')
     }
     reader.onerror = () => setLogoError('Impossible de lire ce fichier.')
     reader.readAsDataURL(file)
   }
 
-  return <Modal title={data.mode === 'edit' ? 'Modifier le modèle' : 'Configurer un modèle'} description="Configurez un alias déjà disponible dans LiteLLM et personnalisez son affichage." onClose={onClose} size="large"><form className="admin-modal-form" onSubmit={(event) => { event.preventDefault(); onSave(form) }}><DropdownField label="Fournisseur" value={String(form.providerId || '')} options={[{ value: '', label: 'Choisir un fournisseur…' }, ...providers.map((provider) => ({ value: String(provider.id), label: provider.nom || provider.name || provider.code }))]} onChange={(value) => update('providerId', value)} /><Field label="Alias interne"><input value={form.alias} onChange={(event) => update('alias', event.target.value)} disabled={Boolean(data.id)} required placeholder="ex. secure-gpt" /></Field><Field label="Modèle amont"><input value={form.providerModel} onChange={(event) => update('providerModel', event.target.value)} required placeholder="ex. openai/gpt-4o-mini" /><small className="admin-field-help">Identifiant du modèle chez le fournisseur, pas une URL.</small></Field><Field label="Nom affiché"><input value={form.displayName} onChange={(event) => update('displayName', event.target.value)} required /></Field><div className="form-grid"><DropdownField label="Statut" value={form.status || 'ACTIF'} options={STATUS_OPTIONS} onChange={(value) => update('status', value)} /><Field label="URL du logo"><input type="url" value={localLogo ? '' : (form.logoUrl || '')} onChange={(event) => { update('logoUrl', event.target.value); setLogoError('') }} placeholder={localLogo ? 'Logo local sélectionné' : 'https://…'} /></Field></div><Field label="Description"><textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows="3" /></Field><div className="model-logo-picker"><div className="model-logo-preview"><ModelLogo alias={form.alias} logoUrl={form.logoUrl} fallback={modelCardMeta(form.alias || 'model').initials} /></div><div><label className="admin-button secondary model-logo-file-button">Choisir un logo local<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={selectLogoFile} /></label>{form.logoUrl && <button type="button" className="admin-text-button" onClick={() => { update('logoUrl', ''); setLogoError('') }}>Retirer le logo</button>}<small className="admin-field-help">PNG, JPEG, WebP ou GIF · 512 Ko maximum.</small>{logoError && <small className="admin-field-error" role="alert">{logoError}</small>}</div></div><div className="admin-modal-actions"><button type="button" className="admin-button secondary" onClick={onClose}>Annuler</button><button type="submit" className="admin-button primary" disabled={busy || Boolean(logoError) || !form.providerId}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div></form></Modal>
+  return (
+    <Modal title={data.mode === 'edit' ? 'Modifier le modèle' : 'Configurer un modèle'} description="Configurez un alias déjà disponible dans LiteLLM et personnalisez son affichage." onClose={onClose} size="large">
+      <form className="admin-modal-form model-modal-form" onSubmit={(event) => { event.preventDefault(); onSave({ ...form, logoUrl: selectedLogo }) }}>
+        <div className="model-form-grid">
+          <DropdownField label="Fournisseur" value={String(form.providerId || '')} options={[{ value: '', label: 'Choisir un fournisseur…' }, ...providers.map((provider) => ({ value: String(provider.id), label: provider.nom || provider.name || provider.code }))]} onChange={(value) => update('providerId', value)} />
+          <DropdownField label="Statut" value={form.status || 'ACTIF'} options={STATUS_OPTIONS} onChange={(value) => update('status', value)} />
+          <Field label="Alias interne"><input value={form.alias} onChange={(event) => update('alias', event.target.value)} disabled={Boolean(data.id)} required placeholder="ex. secure-gpt" /></Field>
+          <Field label="Modèle amont"><input value={form.providerModel} onChange={(event) => update('providerModel', event.target.value)} required placeholder="ex. openai/gpt-4o-mini" /><small className="admin-field-help">Identifiant chez le fournisseur.</small></Field>
+          <Field label="Nom affiché"><input value={form.displayName} onChange={(event) => update('displayName', event.target.value)} required /></Field>
+          <Field label="Description"><textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows="2" /></Field>
+        </div>
+        <div className="model-logo-field">
+          <div className="model-logo-field-heading"><span>Logo</span><div className="model-logo-source" role="tablist" aria-label="Source du logo"><button type="button" role="tab" aria-selected={logoMode === 'url'} className={logoMode === 'url' ? 'active' : ''} onClick={() => { setLogoMode('url'); setLogoError('') }}>URL</button><button type="button" role="tab" aria-selected={logoMode === 'local'} className={logoMode === 'local' ? 'active' : ''} onClick={() => { setLogoMode('local'); setLogoError('') }}>Local</button></div></div>
+          <div className="model-logo-picker"><div className="model-logo-preview"><ModelLogo alias={form.alias} logoUrl={selectedLogo} fallback={modelCardMeta(form.alias || 'model').initials} /></div><div className="model-logo-control">{logoMode === 'url' ? <input className="model-logo-url-input" type="url" value={urlLogo} onChange={(event) => { setUrlLogo(event.target.value); setLogoError('') }} placeholder="https://…" aria-label="URL du logo" /> : <label className="admin-button secondary model-logo-file-button">{localLogo ? 'Changer le logo local' : 'Choisir un logo local'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={selectLogoFile} /></label>}{selectedLogo && <button type="button" className="admin-text-button" onClick={() => { if (logoMode === 'local') setLocalLogo(''); else setUrlLogo(''); setLogoError('') }}>Retirer</button>}<small className="admin-field-help">{logoMode === 'local' ? 'PNG, JPEG, WebP ou GIF · 512 Ko maximum.' : 'Utilisez une URL HTTPS publique vers une image.'}</small>{logoError && <small className="admin-field-error" role="alert">{logoError}</small>}</div></div>
+        </div>
+        <div className="admin-modal-actions"><button type="button" className="admin-button secondary" onClick={onClose}>Annuler</button><button type="submit" className="admin-button primary" disabled={busy || Boolean(logoError) || !form.providerId}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+      </form>
+    </Modal>
+  )
 }
 function DropdownField({ label, value, options, onChange, disabled = false, placeholder }) {
   return (

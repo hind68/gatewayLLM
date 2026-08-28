@@ -391,7 +391,7 @@
   margin-top: 12px;
   padding: 3px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(225, 29, 72, 0.08);
 }
 
@@ -931,11 +931,22 @@
   max-width: 560px;
   min-width: 0;
   background-color: #FEF2F2;
-  border: 1px solid #FECACA;
-  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 6px;
+  box-shadow: none;
   color: #991B1B;
   margin-right: auto;
   overflow: hidden;
+}
+
+.message.assistant.dlp-blocked-response .dlp-alert-tabs button {
+  border-radius: 4px;
+}
+
+.message.assistant.dlp-blocked-response .dlp-alert-tabs button.is-active,
+.message.assistant.dlp-blocked-response .dlp-code-view {
+  border-radius: 4px;
+  box-shadow: none;
 }
 
 .message.assistant.dlp-blocked-response .dlp-alert.is-expanded {
