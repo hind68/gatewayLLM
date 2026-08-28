@@ -5,6 +5,7 @@ import { ADMIN_NAV_ITEMS, formatKicker } from './AdminUtils'
 import { createPortal } from 'react-dom'
 
 const ADMIN_ICON_PNG = {
+  grid: '/assets/admin-overview.png',
   users: '/assets/admin-users.png',
   spark: '/assets/admin-models.png',
   shield: '/assets/admin-security.png',
@@ -12,9 +13,9 @@ const ADMIN_ICON_PNG = {
   activity: '/assets/admin-audit-log-cropped.png',
 }
 
-export function Icon({ name, size = 18, strokeWidth = 1.8 }) {
+export function Icon({ name, size = 18, strokeWidth = 1.8, usePng = true }) {
   const png = ADMIN_ICON_PNG[name]
-  if (png) return <img className="admin-png-icon" src={png} alt="" width={size} height={size} aria-hidden="true" />
+  if (usePng && png) return <img className="admin-png-icon" src={png} alt="" width={size} height={size} aria-hidden="true" />
 
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
   const paths = {
@@ -86,7 +87,7 @@ export function AdminSidebar({ activeSection, onSectionChange, onBackToChat, key
       <nav className="admin-sidebar-nav" aria-label="Sections d'administration">
         {ADMIN_NAV_ITEMS.map((item) => (
           <button key={item.id} type="button" className={activeSection === item.id ? 'active' : ''} aria-current={activeSection === item.id ? 'page' : undefined} onClick={() => onSectionChange(item.id)}>
-            <Icon name={item.icon} size={17} />
+            <Icon name={item.icon} size={20} />
             <span>{item.label}</span>
           </button>
         ))}

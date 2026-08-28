@@ -1,7 +1,6 @@
 import { useContext } from 'react'
 import { AuthContext } from '../../AuthProvider'
 import { getInitials } from '../../utils/authUtils'
-import { Icon } from '../admin/AdminComponents'
 import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
@@ -245,7 +244,7 @@ export default function Sidebar({
                       onClick={() => admin?.setAdminSection?.(item.id)}
                     >
                       <span className="sidebar-icon admin-nav-icon" aria-hidden="true">
-                        {item.iconPng ? <img src={item.iconPng} alt="" /> : <Icon name={item.icon} size={19} />}
+                        <img src={item.iconSrc} alt="" />
                       </span>
                       <span>{item.label}</span>
                     </button>

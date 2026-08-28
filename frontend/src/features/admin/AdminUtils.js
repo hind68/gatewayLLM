@@ -1,10 +1,10 @@
 export const ADMIN_NAV_ITEMS = [
-  { id: 'overview', label: "Vue d'ensemble", icon: 'grid' },
-  { id: 'security', label: 'Sécurité', icon: 'shield', iconPng: '/assets/admin-security.png' },
-  { id: 'models', label: 'Modèles', icon: 'spark', iconPng: '/assets/admin-models.png' },
-  { id: 'users', label: 'Utilisateurs', icon: 'users', iconPng: '/assets/admin-users.png' },
-  { id: 'roles', label: 'Rôles', icon: 'key', iconPng: '/assets/admin-roles.png' },
-  { id: 'audit', label: "Journal d'audit", icon: 'activity', iconPng: '/assets/admin-audit-log-cropped.png' },
+  { id: 'overview', label: "Vue d'ensemble", icon: 'grid', iconSrc: '/assets/admin-overview.png' },
+  { id: 'security', label: 'Sécurité', icon: 'shield', iconSrc: '/assets/admin-security.png' },
+  { id: 'models', label: 'Modèles', icon: 'spark', iconSrc: '/assets/admin-models.png' },
+  { id: 'users', label: 'Utilisateurs', icon: 'users', iconSrc: '/assets/admin-users.png' },
+  { id: 'roles', label: 'Rôles', icon: 'key', iconSrc: '/assets/admin-roles.png' },
+  { id: 'audit', label: "Journal d'audit", icon: 'activity', iconSrc: '/assets/admin-audit-log-cropped.png' },
 ]
 
 export function formatKicker(value) {

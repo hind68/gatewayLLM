@@ -35,12 +35,7 @@ function App() {
       return
     }
 
-    document.documentElement.dataset.workspaceTransition = resolvedValue ? 'to-admin' : 'to-chat'
-    const transition = document.startViewTransition(updateView)
-    const clearTransitionDirection = () => {
-      delete document.documentElement.dataset.workspaceTransition
-    }
-    transition.finished.then(clearTransitionDirection, clearTransitionDirection)
+    document.startViewTransition(updateView)
   }, [showAdminDashboard])
 
   const showError = useCallback((message) => {
