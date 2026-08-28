@@ -148,6 +148,10 @@
   font-size: 13px;
 }
 
+.custom-dropdown-menu li + li {
+  margin-top: 3px;
+}
+
 .custom-dropdown-menu li:hover,
 .custom-dropdown-menu li.selected {
   background: #f3f4f6;
@@ -312,6 +316,12 @@
   box-shadow: var(--shadow-md);
   transform-origin: top;
   animation: menu-pop-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.custom-dropdown-menu-portal {
+  position: fixed;
+  right: auto;
+  z-index: 12000;
 }
 
 .conversation-menu.menu-top .menu-popover {

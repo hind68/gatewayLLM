@@ -1,433 +1,257 @@
 # Secure LLM Gateway
 
-## Architecture actuelle
+Secure LLM Gateway is a local, security-focused chat platform. Users authenticate with Keycloak, messages and attachments are checked by a DLP service, the Spring Boot gateway applies user and role policy, and approved content is sent to model providers through LiteLLM.
 
-- `frontend/src/features/` regroupe les domaines React: `chat`, `conversations`, `layout` et `models`.
-- `frontend/src/features/chat/hooks/useChatController.js` coordonne uniquement les workflows qui traversent chat + conversations, par exemple premier envoi, ouverture d'une conversation et chargement du cache messages.
-- `backend/src/main/java/com/example/backend/controller/` est separe par domaine: health, chat, models et conversations. Les URLs restent sous `/api`.
-- `backend/src/main/java/com/example/backend/integration/litellm/` contient l'integration LiteLLM basee sur `WebClient`.
-- `backend/src/main/java/com/example/backend/enums/` contient les enums JPA. Les valeurs stockees en base ne changent pas.
+## What is included
 
-## Notes d'exploitation
+- A React 19/Vite frontend for chat, conversation history, model selection, attachment inspection, secure resend, and administration.
+- A Spring Boot 4 backend exposing authenticated REST and SSE APIs.
+- Keycloak authentication with realm roles and an included local `synapse` realm.
+- An administration area for users, roles, model providers, model access restrictions, banned words, DLP patterns, filtered-message incidents, metrics, and audit logs.
+- A FastAPI DLP service for text, images, PDF, Office documents, CSV/XLSX, source/config files, and protected ZIP processing.
+- LiteLLM as the single provider-facing model proxy.
+- PostgreSQL databases for application data and Keycloak data.
+- Flyway-managed application schema migrations and CI checks for backend, frontend, DLP, and Docker Compose.
 
-- Le backend conserve MVC pour les controleurs HTTP/SSE et WebFlux pour `WebClient`, utilise par l'integration LiteLLM.
-- L'image LiteLLM utilise encore le tag `latest`; il faudra figer une version apres validation d'une release precise.
-- `--detailed_debug` et `set_verbose: true` sont pratiques en local, mais doivent etre desactives en environnement sensible ou production afin d'eviter des logs trop bavards.
-
-Secure LLM Gateway is a local proof of concept for routing chat requests through a controlled backend before calling LLM providers through LiteLLM.
-
-The current project contains:
-
-- a LiteLLM proxy running with Docker Compose;
-- a PostgreSQL database running with Docker Compose;
-- a Spring Boot backend in `backend/`;
-- a React/Vite frontend in `frontend/`;
-- Flyway migrations for the model catalog, conversations and messages.
-
-No real secret must be committed. Local secrets belong only in `.env`.
-
-Provider credentials are intentionally not managed through the admin API or stored in
-the database. The current deployment injects provider keys into LiteLLM through the
-local environment, while the backend keeps only non-secret provider/model metadata.
-The admin model screens can therefore edit aliases, display names, descriptions, logo
-URLs and statuses, but changing a provider key still requires the deployment secret
-configuration. This prevents credentials from being returned to or persisted by the
-frontend.
+No real secret should be committed. Local credentials belong in the ignored root `.env` file.
 
 ## Architecture
 
 ```text
-React frontend
-      |
-      v
-Spring Boot backend
-      |
-      +--> PostgreSQL: model catalog, conversations, messages
-      |
-      v
-LiteLLM proxy
-      |
-      v
-OpenAI / Groq / Gemini / Mistral
+Browser
+  |
+  +--> Keycloak (login, JWT, realm roles)
+  |
+  v
+React/Vite frontend
+  |
+  | Bearer JWT
+  v
+Spring Boot gateway
+  |       |          |
+  |       |          +--> PostgreSQL (users, conversations, messages,
+  |       |               attachments, policies, incidents, audit logs)
+  |       |
+  |       +--> Keycloak Admin API (admin-only user and role management)
+  |
+  +--> FastAPI DLP service --> allow / mask / block
+  |
+  +--> LiteLLM --> OpenAI / Groq / Gemini / Mistral
 ```
 
-Default local URLs:
+The backend is the trust boundary. All `/api/**` routes require a valid Keycloak JWT. Admin routes additionally require the `ADMIN` realm role. Only `/actuator/health` is public.
 
-| Service | URL |
+## Local service URLs
+
+| Service | Default URL |
 | --- | --- |
 | Frontend | `http://localhost:5173` |
-| Backend API | `http://127.0.0.1:8081/api` |
-| LiteLLM | `http://localhost:4000` |
-| PostgreSQL from host | `localhost:5433` |
-| PostgreSQL from Docker network | `postgres:5432` |
+| Backend | `http://127.0.0.1:8081` |
+| Public backend health | `http://127.0.0.1:8081/actuator/health` |
+| Keycloak | `http://127.0.0.1:8080` |
+| DLP service | `http://127.0.0.1:8000` |
+| LiteLLM | `http://127.0.0.1:4000` |
+| Application PostgreSQL | `localhost:5433` |
 
 ## Prerequisites
 
 - Git
-- Docker Desktop
+- Docker Desktop with Docker Compose
 - Java 17
-- Node.js and npm
-- At least one provider API key for the model you want to test
+- Node.js 22 and npm (the same major version used by CI)
+- Python 3.11 only when running the DLP service outside Docker
+- At least one provider API key for live model requests
 
-Provider keys used by the current LiteLLM config:
+## Model configuration
 
-| Alias | Display name | Provider model | Required key |
-| --- | --- | --- | --- |
-| `secure-gpt` | OpenAI GPT-4o mini | `openai/gpt-4o-mini` | `OPENAI_API_KEY` |
-| `secure-groq` | Groq Llama 3.1 8B | `groq/llama-3.1-8b-instant` | `GROQ_API_KEY` |
-| `secure-gemini` | Gemini 3.6 Flash | `gemini/gemini-3.6-flash` | `GEMINI_API_KEY` |
-| `secure-mistral` | Mistral Small | `mistral/mistral-small-latest` | `MISTRAL_API_KEY` |
+The tracked LiteLLM configuration currently defines:
 
-`secure-claude` is prepared in `litellm/config.yaml` but is commented. Enable it only after adding `ANTHROPIC_API_KEY`.
+| Gateway alias | LiteLLM provider model | Environment variable |
+| --- | --- | --- |
+| `secure-gpt` | `openai/gpt-4o-mini` | `OPENAI_API_KEY` |
+| `secure-groq` | `groq/openai/gpt-oss-20b` | `GROQ_API_KEY` |
+| `secure-gemini` | `gemini/gemini-3.6-flash` | `GEMINI_API_KEY` |
+| `secure-mistral` | `mistral/mistral-small-latest` | `MISTRAL_API_KEY` |
 
-In the admin model catalog, each provider can reference its API-key environment variable (for example `OPENAI_API_KEY`). The secret value is intentionally not stored in PostgreSQL or returned by the API. Add the value to `.env`, restart LiteLLM, then the admin catalog will show whether the referenced key is configured.
+An Anthropic example is commented out in `litellm/config.yaml`. Provider secret values are injected into LiteLLM and are not stored in PostgreSQL or returned by the admin API. The database stores only the environment-variable reference and non-secret model metadata.
 
-## 1. Configure Environment
+## Quick start
 
-For a fresh clone:
+### 1. Configure local environment
 
-```powershell
-git clone https://github.com/hind68/gateway-LLM.git
-cd gateway-LLM
-Copy-Item .env.example .env
-```
-
-If the repository is already cloned, run this from the project root:
+From the repository root:
 
 ```powershell
 Copy-Item .env.example .env
+Copy-Item frontend/.env.example frontend/.env
 ```
 
-Fill `.env` with local values:
+Replace every `change_me_...` value in `.env`. Add the provider keys you intend to use. Important settings include:
 
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-GROQ_API_KEY=your_groq_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-MISTRAL_API_KEY=your_mistral_api_key_here
+- `LITELLM_MASTER_KEY`: shared by LiteLLM and the backend.
+- `DLP_ADMIN_KEY`: protects the DLP pattern-management endpoint.
+- `KEYCLOAK_DB_PASSWORD`: password for the Keycloak database.
+- `KEYCLOAK_ADMIN_PASSWORD`: local Keycloak console administrator password.
+- `KEYCLOAK_DEMO_PASSWORD`: local-only password assigned to the imported development users.
+- `GATEWAY_ADMIN_CLIENT_SECRET`: secret for the backend's Keycloak service account.
+- `POSTGRES_HOST_PORT`: defaults to `5433` to avoid a common local `5432` collision.
 
-LITELLM_MASTER_KEY=sk-local-litellm
-LITELLM_PORT=4000
+The frontend defaults in `frontend/.env.example` point to the local backend and Keycloak realm. Change them when using different hosts, ports, realm, or client ID.
 
-POSTGRES_DB=secure_llm_gateway
-POSTGRES_USER=secure_llm_user
-POSTGRES_PASSWORD=change_me_local_only
-POSTGRES_HOST_PORT=5433
-
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5433/secure_llm_gateway
-SPRING_DATASOURCE_USERNAME=secure_llm_user
-SPRING_DATASOURCE_PASSWORD=change_me_local_only
-
-KEYCLOAK_DB_NAME=keycloak
-KEYCLOAK_DB_USER=keycloak
-KEYCLOAK_DB_PASSWORD=choose_a_local_database_password
-KEYCLOAK_ADMIN_USERNAME=admin
-KEYCLOAK_ADMIN_PASSWORD=choose_a_local_admin_console_password
-KEYCLOAK_DEMO_PASSWORD=choose_one_local_demo_login_password
-GATEWAY_ADMIN_CLIENT_SECRET=choose_a_long_random_local_client_secret
-KEYCLOAK_ADMIN_BASE_URL=http://127.0.0.1:8080
-KEYCLOAK_ADMIN_REALM=synapse
-KEYCLOAK_ADMIN_TOKEN_REALM=synapse
-KEYCLOAK_ADMIN_MANAGED_ROLES=ADMIN,INTERN,EXTERN
-KEYCLOAK_ISSUER_URI=http://127.0.0.1:8080/realms/synapse
-KEYCLOAK_HOST_PORT=8080
-```
-
-Important:
-
-- `.env` is ignored by Git.
-- Keep `LITELLM_MASTER_KEY` identical for LiteLLM and the backend.
-- Port `5433` is used on the host to avoid common conflicts with local PostgreSQL on `5432`.
-- `KEYCLOAK_DEMO_PASSWORD` is the shared local password assigned to the imported development users. It must not be a real or reused password.
-- `GATEWAY_ADMIN_CLIENT_SECRET` is used by the backend's confidential service-account client. Use a long random local value.
-- The Keycloak administrator password, demo password and `gateway-admin` client secret are substituted from `.env`; they are never stored in the tracked realm JSON.
-
-## 2. Start Docker Services
-
-From the project root:
+### 2. Start infrastructure
 
 ```powershell
-docker compose up -d postgres litellm keycloak-db keycloak keycloak-provisioner
-```
-
-Check the containers:
-
-```powershell
+docker compose up -d postgres litellm dlp-service keycloak-db keycloak keycloak-provisioner
 docker compose ps
 ```
+
+The one-shot `keycloak-provisioner` waits for the imported realm, applies the configured demo password, and aligns the frontend and backend clients. It is expected to exit successfully after provisioning.
 
 Useful logs:
 
 ```powershell
-docker compose logs -f postgres
-docker compose logs -f litellm
 docker compose logs -f keycloak
+docker compose logs -f dlp-service
+docker compose logs -f litellm
 ```
 
-Keycloak is available at `http://localhost:8080`. On an empty Keycloak database,
-`--import-realm` loads `keycloak/import/synapse-realm.json`. The file preserves the
-development realm UUIDs, users, roles, clients, scopes, mappers, authentication
-flows, locale and Synapse login theme while obtaining local credentials from
-`.env`. The frontend uses the public `synapse-client` authorization-code client
-with PKCE. The backend uses the confidential `gateway-admin` service account with
-only `query-users`, `view-users`, `manage-users` and `view-realm` permissions.
-
-Keycloak skips startup import when a realm named `synapse` already exists. This is
-intentional: restarting the stack does not overwrite or duplicate an existing
-development realm. The one-shot provisioner keeps the local theme, redirects and
-backend service-account configuration aligned and may show as exited successfully
-after startup. Rerun it with `docker compose run --rm keycloak-provisioner` after
-changing those local settings.
-
-### Development users
-
-Every account below uses the value of `KEYCLOAK_DEMO_PASSWORD` from the local
-`.env` file. User UUIDs and role mappings in the import match the inventoried
-development realm.
-
-| Username | Email | Realm roles |
-| --- | --- | --- |
-| `admin` | `admin@local.test` | `ADMIN`, `USER` |
-| `admin1` | `admin1@test.com` | `ADMIN` |
-| `admin2` | `admin2@test.com` | `ADMIN` |
-| `extern1` | `extern1@test.com` | `EXTERN` |
-| `extern2` | `extern2@test.com` | `EXTERN` |
-| `intern1` | `inter1@test.com` | `INTERN` |
-| `intern2` | `intern2@test.com` | `INTERN` |
-| `user` | `user@local.test` | `USER` |
-
-### Destructive local Keycloak reset
-
-The following commands delete the local Keycloak database volume and all realm
-changes made after import. They do not delete the application PostgreSQL volume.
-Do not run them against an environment containing data you need. The exact volume
-prefix comes from the Compose project name; verify it first with
-`docker volume ls`.
-
-```powershell
-docker compose stop keycloak-provisioner keycloak keycloak-db
-docker compose rm -f keycloak-provisioner keycloak keycloak-db
-docker volume rm gateway-llm_keycloak_postgres_data
-docker compose up -d keycloak-db keycloak keycloak-provisioner
-```
-
-## 3. Run the Backend
-
-Open a new terminal:
+### 3. Start the backend
 
 ```powershell
 cd backend
-$env:LITELLM_MASTER_KEY="sk-local-litellm"
-$env:SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5433/secure_llm_gateway"
-$env:SPRING_DATASOURCE_USERNAME="secure_llm_user"
-$env:SPRING_DATASOURCE_PASSWORD="change_me_local_only"
-$env:KEYCLOAK_ADMIN_BASE_URL="http://localhost:8080"
-$env:KEYCLOAK_ADMIN_REALM="synapse"
-$env:KEYCLOAK_ADMIN_TOKEN_REALM="synapse"
-$env:KEYCLOAK_ADMIN_CLIENT_ID="gateway-admin"
-$env:GATEWAY_ADMIN_CLIENT_SECRET="<the local-only value from .env>"
-# On Windows, use IPv4 if Java times out while reading Keycloak on localhost.
-$env:JAVA_TOOL_OPTIONS="-Djava.net.preferIPv4Stack=true"
 cmd /c mvnw.cmd spring-boot:run
 ```
 
-Use the same values that you placed in `.env`.
-The backend also imports the ignored root `.env` automatically when launched from
-the project root or from `backend/`, so the local Keycloak service-client secret is
-available without committing it.
+The backend imports the ignored root `.env` automatically when started from either the repository root or `backend/`. Flyway applies schema migrations on startup, and Hibernate uses `ddl-auto=validate`; schema changes must therefore be implemented as Flyway migrations.
 
-Flyway runs automatically when the backend starts. It creates and validates the PostgreSQL schema. Hibernate uses:
+If Java resolves `localhost` incorrectly on Windows, run this before starting the backend:
 
-```properties
-spring.jpa.hibernate.ddl-auto=validate
+```powershell
+$env:JAVA_TOOL_OPTIONS="-Djava.net.preferIPv4Stack=true"
 ```
 
-So database schema changes must be done with Flyway migrations.
-
-## 4. Run the Frontend
-
-Open another terminal:
+### 4. Start the frontend
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open:
+Open `http://localhost:5173`. Keycloak redirects unauthenticated users to the `synapse` login page.
+
+## Development users
+
+The imported users all receive the local value of `KEYCLOAK_DEMO_PASSWORD` during provisioning.
+
+| Username | Realm roles |
+| --- | --- |
+| `admin`, `admin1`, `admin2` | `ADMIN` (the `admin` account also has `USER`) |
+| `intern1`, `intern2` | `INTERN` |
+| `extern1`, `extern2` | `EXTERN` |
+| `user` | `USER` |
+
+These accounts and their shared password are for local development only.
+
+## Security and DLP behavior
+
+1. The frontend obtains a Keycloak access token and sends it with API requests.
+2. The backend resolves the application user strictly from the JWT UUID subject; missing or malformed identities fail with `401`.
+3. Model access is checked against user and role restrictions. A personal restriction applies even to an administrator; `ADMIN` bypasses only role-level restrictions.
+4. Global, user, and role banned-word policies are combined for the request.
+5. Text and attachments are sent to the DLP service. The current policy allows clean content, masks low/medium findings, and blocks high-severity findings or analysis failures.
+6. Only safe content is sent to LiteLLM. Blocked attempts and security-relevant actions are persisted for admin review.
+7. Attachment reads and secure resend operations verify ownership using the authenticated JWT and do not fall back to a demo user.
+
+The DLP implementation combines Presidio, French and English spaCy models, Moroccan recognizers, structured regex validation, optional transformer detection, normalization, deduplication, and archive/file safety limits. See `dlp/README.md` for detector details and limitations.
+
+## Main API areas
+
+All routes below require `Authorization: Bearer <token>` unless stated otherwise.
+
+- Health: `GET /actuator/health` (public), `GET /api/health` (authenticated).
+- Models: `GET /api/models`, `GET /api/models/details`.
+- Conversations: create, list, open, rename, change model, archive, restore, permanently delete, list messages, and SSE message streaming under `/api/conversations`.
+- Attachments: metadata, original content, inspection, masked content, masked download, and secure resend under `/api/attachments` and `/api/conversations/{id}/attachments`.
+- Admin models/providers: `/api/admin/models`.
+- Admin users and roles: `/api/admin/keycloak`.
+- Admin policy: `/api/admin/permissions`, including global/user/role banned words, model restrictions, and patterns.
+- Admin monitoring: `/api/admin/metrics/security`, `/api/admin/filtered-messages`, and `/api/admin/audit`.
+
+The DLP service exposes `/health`, `/ready`, `/analyse`, `/analyse-message`, `/analyse-file`, `/analyse-image`, and `/analyse-pdf`. Its `/admin/patterns` route is protected by `DLP_ADMIN_KEY` and is called by the backend rather than the browser.
+
+## Repository layout
 
 ```text
-http://localhost:5173
+backend/                 Spring Boot gateway, Flyway migrations, and tests
+dlp/                     FastAPI DLP service, detectors, evaluation corpus, and tests
+frontend/                React/Vite application and tests
+keycloak/import/         Local synapse realm import
+keycloak/themes/         Custom Synapse login theme
+keycloak/provision.sh    Idempotent local client/user provisioning
+litellm/config.yaml      Provider aliases and LiteLLM settings
+docker-compose.yml       Local infrastructure
 ```
 
-The frontend calls:
+Runtime attachment files default to `backend/storage/attachments` when the backend is launched from `backend/`. Attachment metadata is stored in PostgreSQL; the binary/original files remain on local storage.
 
-```text
-http://127.0.0.1:8081/api
-```
+## Verification before opening or merging a pull request
 
-## 5. Quick Verification
-
-Backend health:
-
-```powershell
-curl.exe http://127.0.0.1:8081/api/health
-```
-
-Available models:
-
-```powershell
-curl.exe http://127.0.0.1:8081/api/models/details
-```
-
-Simple backend chat test:
-
-```powershell
-curl.exe -X POST http://localhost:8080/api/chat `
-  -H "Content-Type: application/json" `
-  -d "{\"model\":\"secure-groq\",\"message\":\"Bonjour, reponds en une phrase.\"}"
-```
-
-Direct LiteLLM test:
-
-```powershell
-curl.exe -X POST http://localhost:4000/v1/chat/completions `
-  -H "Content-Type: application/json" `
-  -H "Authorization: Bearer sk-local-litellm" `
-  -d "@litellm/examples/request-groq.json"
-```
-
-If you changed `LITELLM_MASTER_KEY`, replace `sk-local-litellm` in the Authorization header.
-
-## Main Backend Endpoints
-
-Compatibility endpoint:
-
-- `POST /api/chat`
-
-Conversation endpoints:
-
-- `POST /api/conversations`
-- `GET /api/conversations?modelAlias=secure-groq&search=test&archived=false&page=0&size=20`
-- `GET /api/conversations/{id}`
-- `PATCH /api/conversations/{id}`
-- `PATCH /api/conversations/{id}/model`
-- `DELETE /api/conversations/{id}` archives a conversation
-- `DELETE /api/conversations/{id}/permanent` deletes a conversation permanently
-- `GET /api/conversations/{id}/messages`
-- `POST /api/conversations/{id}/messages/stream`
-
-The frontend uses the streaming endpoint for progressive assistant responses.
-
-## Database
-
-PostgreSQL is started by Docker Compose. Data is kept in the named volume:
-
-```text
-secure_llm_postgres_data
-```
-
-Current migrations live in:
-
-```text
-backend/src/main/resources/db/migration
-```
-
-They create:
-
-- LLM providers and model aliases;
-- display names for the frontend;
-- a temporary local demo user;
-- conversations and messages;
-- model attribution per assistant message;
-- delete behavior for conversations and linked messages.
-
-To recreate the database from zero during local development:
-
-```powershell
-docker compose down -v
-docker compose up -d postgres litellm
-```
-
-Then restart the backend so Flyway runs again.
-
-## Test Commands Before Sharing
-
-Frontend:
-
-```powershell
-cd frontend
-npm run lint
-npm run build
-```
+Run the same checks represented in CI.
 
 Backend:
 
 ```powershell
 cd backend
-cmd /c mvnw.cmd test
+cmd /c mvnw.cmd -B test
 ```
 
-Docker Compose syntax:
+Frontend:
+
+```powershell
+cd frontend
+npm ci
+npm run lint
+npm test
+npm run build
+```
+
+DLP (requires the dependencies and declared spaCy models from `dlp/README.md`):
+
+```powershell
+cd dlp
+python -m pytest -q
+```
+
+Compose configuration:
 
 ```powershell
 docker compose config
 ```
 
-## Troubleshooting
+## Common problems
 
-### Docker services are not available
+- **Frontend redirects repeatedly or stays blank:** confirm Keycloak is running, provisioning completed, and `frontend/.env` matches the `synapse` realm and `synapse-client`.
+- **Backend returns `401`:** the API is intentionally authenticated; use the frontend or send a valid Keycloak bearer token.
+- **Backend cannot validate tokens:** verify `KEYCLOAK_ISSUER_URI` and prefer the same host spelling (`127.0.0.1` by default) used by the token issuer.
+- **Backend cannot call Keycloak admin endpoints:** verify `GATEWAY_ADMIN_CLIENT_SECRET`, then rerun `docker compose run --rm keycloak-provisioner`.
+- **DLP requests fail closed:** check `http://127.0.0.1:8000/ready` and `docker compose logs dlp-service`.
+- **LiteLLM authentication fails:** ensure the backend and LiteLLM use the same `LITELLM_MASTER_KEY`.
+- **A provider rejects a request:** verify its API key and the provider model name in `litellm/config.yaml`.
+- **PostgreSQL port conflict:** change both `POSTGRES_HOST_PORT` and `SPRING_DATASOURCE_URL`.
 
-Start Docker Desktop, then run:
+## Stop or reset local services
 
-```powershell
-docker compose up -d postgres litellm
-```
-
-### PostgreSQL port conflict
-
-The project uses host port `5433` by default:
-
-```env
-POSTGRES_HOST_PORT=5433
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5433/secure_llm_gateway
-```
-
-If you change `POSTGRES_HOST_PORT`, update `SPRING_DATASOURCE_URL` too.
-
-### Backend cannot authenticate with LiteLLM
-
-Make sure the backend environment variable and `.env` use the same value:
-
-```env
-LITELLM_MASTER_KEY=sk-local-litellm
-```
-
-### Provider returns an authentication error
-
-Check that the matching key exists in `.env`. For example, `secure-gemini` requires `GEMINI_API_KEY`.
-
-### Frontend shows Failed to fetch
-
-Usually one of these services is not running:
-
-- backend on `http://127.0.0.1:8081`;
-- frontend on `http://localhost:5173`;
-- Docker services for PostgreSQL and LiteLLM.
-
-Start Docker, then the backend, then the frontend.
-
-### Maven downloads fail on first run
-
-The first backend run may download Maven dependencies. Make sure the machine has internet access.
-
-## Stop the Project
-
-Stop frontend and backend with `Ctrl+C` in their terminals.
-
-Stop Docker services:
+Stop the stack without deleting data:
 
 ```powershell
 docker compose down
+```
+
+`docker compose down -v` deletes both application and Keycloak database volumes. Use it only when all local data can be discarded.
+
+Keycloak skips realm import when the `synapse` realm already exists. After changing provisioning settings, rerun:
+
+```powershell
+docker compose run --rm keycloak-provisioner
 ```

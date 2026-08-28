@@ -147,6 +147,7 @@ export default function AppLayout({
     window.addEventListener('pointercancel', handlePointerUp)
   }, [inspectorWidth])
 
+
   return (
     <div className={`app-shell ${layout.isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
       <Sidebar
@@ -195,21 +196,26 @@ export default function AppLayout({
       {layout.isSearchModalOpen && (
         <SearchModal
           inputRef={layout.searchInputRef}
-          conversations={state.conversations}
-          isLoadingHistory={state.isLoadingHistory}
-          modelFilter={state.modelFilter}
           models={models.models}
           onClose={() => layout.setIsSearchModalOpen(false)}
           openConversation={actions.openConversation}
-          search={state.search}
-          setModelFilter={filters.setModelFilter}
-          setSearch={filters.setSearch}
-          setShowArchived={filters.setShowArchived}
-          showArchived={state.showArchived}
         />
       )}
 
-      <div className="chat-workspace">
+      {layout.isModelsView && (
+        <ModelGallery
+          disabled={status.isGenerating}
+          isLoading={models.isLoadingModels}
+          models={models.models}
+          onClose={() => layout.setActiveView('chat')}
+          onSelect={actions.selectModel}
+        />
+      )}
+
+      <div
+        aria-hidden={layout.isSearchModalOpen || layout.isModelsView || undefined}
+        className={`chat-workspace ${layout.isSearchModalOpen || layout.isModelsView ? 'is-search-covered' : ''}`}
+      >
       <main
         className={`chat-main ${
           admin?.showAdminDashboard
@@ -219,7 +225,6 @@ export default function AppLayout({
               : 'welcome-mode'
         } ${isDraggingFiles ? 'is-dragging-files' : ''} ${isOverlayOpen ? 'is-backgrounded' : ''}`}
         style={{
-          ...(chat.goBottomTop == null ? {} : { '--go-bottom-top': `${chat.goBottomTop}px` }),
           ...(chat.composerHeight == null ? {} : { '--composer-height': `${chat.composerHeight}px` }),
         }}
         onDragEnter={handleDragEnter}
@@ -240,6 +245,7 @@ export default function AppLayout({
             <div className="header-controls">
               <ModelSelector
                 activeModel={models.activeModel}
+                activeModelAlias={models.activeModelAlias}
                 disabled={status.isGenerating || models.isLoadingModels}
                 isOpen={layout.isModelMenuOpen}
                 models={models.models}
@@ -279,20 +285,11 @@ export default function AppLayout({
           />
         ) : (
           <>
-        {layout.isModelsView && (
-          <ModelGallery
-            disabled={status.isGenerating}
-            isLoading={models.isLoadingModels}
-            models={models.models}
-            onClose={() => layout.setActiveView('chat')}
-            onSelect={actions.selectModel}
-          />
-        )}
-
         <ChatThread
           activeModelAlias={models.activeModelAlias}
           activeModelName={models.activeModel?.displayName || models.modelDisplayName(models.activeModelAlias)}
           bottomRef={chat.bottomRef}
+          composerHeight={chat.composerHeight}
           copiedKey={chat.copiedKey}
           goToBottom={chat.goToBottom}
           hasActiveMessages={chat.hasActiveMessages}
@@ -373,6 +370,7 @@ export default function AppLayout({
             closing={isInspectorClosing}
             conversationId={activeConversation?.id}
             hidden={Boolean(admin?.showAdminDashboard)}
+            key={`${inspectedDocument.attachment?.id || inspectedDocument.id || inspectedDocument.attachment?.filename || inspectedDocument.filename || inspectedDocument.name}-${inspectedDocument.mode || 'view'}`}
             onAttachSecure={attachSecureVersion}
             onClose={closeInspector}
             width={inspectorWidth}

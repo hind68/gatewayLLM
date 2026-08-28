@@ -75,6 +75,8 @@ describe('ChatMessage', () => {
 
   it('styles text DLP tabs and code highlights as compact segmented controls', () => {
     const messagesCss = readFileSync(new URL('../../../styles/messages.css', import.meta.url), 'utf8')
+    const blockedAlertRule = cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert')
+    const blockedActiveTabRule = cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert-tabs button.is-active,\n.message.assistant.dlp-blocked-response .dlp-code-view')
 
     expect(cssRule(messagesCss, '.dlp-alert-tabs')).toMatch(/background:\s*rgba\(225,\s*29,\s*72,\s*0\.08\);/i)
     expect(messagesCss).toMatch(/\.dlp-alert-tabs button\s*\{[^}]*color:\s*#BE123C;/is)
@@ -94,6 +96,11 @@ describe('ChatMessage', () => {
     expect(cssRule(messagesCss, '.dlp-detection-badge')).toMatch(/font-weight:\s*600;/i)
     expect(cssRule(messagesCss, '.dlp-detections small')).toMatch(/color:\s*#64748B;/i)
     expect(cssRule(messagesCss, '.dlp-detections small')).toMatch(/font-weight:\s*500;/i)
+    expect(blockedAlertRule).toMatch(/border:\s*1px solid rgba\(239,\s*68,\s*68,\s*0\.28\);/i)
+    expect(blockedAlertRule).toMatch(/border-radius:\s*6px;/i)
+    expect(blockedAlertRule).toMatch(/box-shadow:\s*none;/i)
+    expect(blockedActiveTabRule).toMatch(/border-radius:\s*4px;/i)
+    expect(blockedActiveTabRule).toMatch(/box-shadow:\s*none;/i)
   })
 
   it('shows copied confirmation for the DLP alert copy button', () => {
@@ -596,15 +603,16 @@ describe('ChatMessage', () => {
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert')).toMatch(/max-width:\s*560px;/)
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert')).toMatch(/overflow:\s*hidden;/)
     expect(cssRule(messagesCss, '.dlp-alert')).toMatch(/background-color:\s*#FEF2F2;/i)
-    expect(cssRule(messagesCss, '.dlp-alert')).toMatch(/border:\s*1px solid #FECACA;/i)
+    expect(cssRule(messagesCss, '.dlp-alert')).toMatch(/border:\s*1px solid rgba\(239,\s*68,\s*68,\s*0\.28\);/i)
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert.is-expanded')).toMatch(/width:\s*100%;/)
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response .dlp-alert.is-expanded')).toMatch(/max-width:\s*560px;/)
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response')).toMatch(/margin-left:\s*auto;/)
     expect(cssRule(messagesCss, '.message.assistant.dlp-blocked-response')).not.toMatch(/width:\s*100%;/)
     expect(chatCss).toMatch(/padding:\s*16px 24px calc\(var\(--composer-height,\s*120px\) \+ 16px\);/)
     expect(cssRule(chatCss, '.conversation-mode .messages')).toMatch(/padding-bottom:\s*calc\(var\(--composer-height,\s*120px\) \+ 16px\);/)
-    expect(cssRule(chatCss, '.go-bottom-button')).toMatch(/left:\s*50%;/)
-    expect(cssRule(chatCss, '.go-bottom-button')).toMatch(/top:\s*var\(--go-bottom-top/)
+    expect(cssRule(chatCss, '.messages-layer')).toMatch(/position:\s*relative;/)
+    expect(cssRule(chatCss, '.go-bottom-button')).toMatch(/position:\s*absolute;/)
+    expect(cssRule(chatCss, '.go-bottom-button')).toMatch(/bottom:\s*12px;/)
     expect(cssRule(chatCss, '.go-bottom-button')).not.toMatch(/calc\(100% - 176px\)/)
     expect(cssRule(chatCss, '.go-bottom-button')).not.toMatch(/bottom:\s*132px;/)
     expect(cssRule(chatCss, '.go-bottom-button')).not.toMatch(/right:\s*32px;/)

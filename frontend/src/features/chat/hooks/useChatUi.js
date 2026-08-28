@@ -18,9 +18,6 @@ export function availableAttachmentSlots(currentCount) {
   return Math.max(0, MAX_ATTACHMENTS - Number(currentCount || 0))
 }
 
-const GO_BOTTOM_GAP = 12
-const GO_BOTTOM_HEIGHT = 32
-
 /**
  * Groups the chat surface state that is independent from conversation CRUD.
  *
@@ -46,7 +43,6 @@ export default function useChatUi({
   const [isComposerMaxed, setIsComposerMaxed] = useState(false)
   const [isComposerTransitioning, setIsComposerTransitioning] = useState(false)
   const [composerHeight, setComposerHeight] = useState(null)
-  const [goBottomTop, setGoBottomTop] = useState(null)
 
   const textareaRef = useRef(null)
   const composerRef = useRef(null)
@@ -172,31 +168,26 @@ export default function useChatUi({
     if (!hasActiveMessages) return undefined
 
     const composer = composerRef.current
-    const chatMain = composer?.closest('.chat-main')
-    if (!composer || !chatMain) return undefined
+    if (!composer) return undefined
 
     let frame = 0
 
-    function updateGoBottomTop() {
+    function updateComposerHeight() {
       frame = 0
       const composerRect = composer.getBoundingClientRect()
-      const mainRect = chatMain.getBoundingClientRect()
       const nextComposerHeight = Math.ceil(composerRect.height)
-      const nextTop = Math.max(12, Math.round(composerRect.top - mainRect.top - GO_BOTTOM_GAP - GO_BOTTOM_HEIGHT))
       setComposerHeight((current) => (current === nextComposerHeight ? current : nextComposerHeight))
-      setGoBottomTop((current) => (current === nextTop ? current : nextTop))
     }
 
     function scheduleUpdate() {
       if (frame) return
-      frame = window.requestAnimationFrame(updateGoBottomTop)
+      frame = window.requestAnimationFrame(updateComposerHeight)
     }
 
-    updateGoBottomTop()
+    updateComposerHeight()
 
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleUpdate)
     observer?.observe(composer)
-    observer?.observe(chatMain)
     window.addEventListener('resize', scheduleUpdate)
 
     return () => {
@@ -204,8 +195,7 @@ export default function useChatUi({
       observer?.disconnect()
       window.removeEventListener('resize', scheduleUpdate)
     }
-  }, [attachments.length, draft, hasActiveMessages, isComposerMaxed])
-
+  }, [hasActiveMessages])
   useEffect(() => () => {
     if (composerTimerRef.current) {
       window.clearTimeout(composerTimerRef.current)
@@ -301,7 +291,6 @@ export default function useChatUi({
     copiedKey,
     draft,
     goToBottom,
-    goBottomTop: hasActiveMessages ? goBottomTop : null,
     handleKeyDown,
     hasActiveMessages,
     isComposerMaxed,
