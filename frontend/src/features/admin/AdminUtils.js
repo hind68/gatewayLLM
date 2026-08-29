@@ -1,10 +1,10 @@
 export const ADMIN_NAV_ITEMS = [
-  { id: 'overview', label: "Vue d'ensemble", icon: 'bentoGrid', iconPng: '/assets/admin-icons/overview.png' },
-  { id: 'security', label: 'Sécurité', icon: 'shieldCheck', iconPng: '/assets/admin-icons/security.png' },
-  { id: 'models', label: 'Modèles', icon: 'chatSpark', iconPng: '/assets/admin-icons/models.png' },
-  { id: 'users', label: 'Utilisateurs', icon: 'peopleGroup', iconPng: '/assets/admin-icons/users.png' },
-  { id: 'roles', label: 'Rôles', icon: 'keyRing', iconPng: '/assets/admin-icons/roles.png' },
-  { id: 'audit', label: "Journal d'audit", icon: 'docSearch', iconPng: '/assets/admin-icons/audit.png' },
+  { id: 'overview', label: "Vue d'ensemble", icon: 'bentoGrid' },
+  { id: 'security', label: 'Sécurité', icon: 'shieldCheck' },
+  { id: 'models', label: 'Modèles', icon: 'chatSpark' },
+  { id: 'users', label: 'Utilisateurs', icon: 'peopleGroup' },
+  { id: 'roles', label: 'Rôles', icon: 'keyRing' },
+  { id: 'audit', label: "Journal d'audit", icon: 'docSearch' },
 ]
 
 export function formatKicker(value) {

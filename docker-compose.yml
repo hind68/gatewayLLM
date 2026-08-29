@@ -138,7 +138,7 @@ services:
       DLP_ADMIN_KEY: ${DLP_ADMIN_KEY:-dev-dlp-admin}
       DLP_PATTERNS_FILE: /app/config/patterns.json
       KEYCLOAK_ADMIN_BASE_URL: http://keycloak:8080
-      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8080}/realms/synapse
+      KEYCLOAK_ISSUER_URI: http://127.0.0.1:${KEYCLOAK_HOST_PORT:-8080}/realms/synapse
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/synapse/protocol/openid-connect/certs
       GATEWAY_ADMIN_CLIENT_SECRET: ${GATEWAY_ADMIN_CLIENT_SECRET:?Set GATEWAY_ADMIN_CLIENT_SECRET in .env}
       ATTACHMENTS_STORAGE_DIR: /app/storage/attachments
@@ -163,7 +163,7 @@ services:
       context: ./frontend
     environment:
       VITE_BACKEND_PROXY_TARGET: http://backend:8081
-      VITE_KEYCLOAK_URL: http://localhost:${KEYCLOAK_HOST_PORT:-8080}
+      VITE_KEYCLOAK_URL: http://127.0.0.1:${KEYCLOAK_HOST_PORT:-8080}
     ports:
       - "${FRONTEND_HOST_PORT:-5173}:5173"
     depends_on:

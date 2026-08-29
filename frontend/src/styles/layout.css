@@ -35,6 +35,12 @@
   view-transition-name: workspace-content;
 }
 
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 /* Blur the chat content directly (instead of relying on a modal's own
    backdrop-filter, which only reaches whatever sits right behind its card)
    so everything behind a full-screen overlay - header, messages, composer -
@@ -46,20 +52,17 @@
   transition: filter 160ms ease;
 }
 
-/* Fade the chatbot workspace into administration (and back). The
-   sidebar (logo, nav, avatar) sits outside this element and never
-   moves, so only the content fades. */
 ::view-transition-group(workspace-content) {
-  animation-duration: 260ms;
-  animation-timing-function: ease;
+  animation-duration: var(--content-swap-duration);
+  animation-timing-function: var(--sidebar-swap-ease);
 }
 
 ::view-transition-old(workspace-content) {
-  animation: workspace-fade-out 260ms ease both;
+  animation: workspace-fade-out var(--content-swap-duration) var(--sidebar-swap-ease) both;
 }
 
 ::view-transition-new(workspace-content) {
-  animation: workspace-fade-in 260ms ease both;
+  animation: workspace-fade-in var(--content-swap-duration) var(--sidebar-swap-ease) both;
 }
 
 @keyframes workspace-fade-out {
@@ -68,14 +71,16 @@
 }
 
 @keyframes workspace-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(var(--content-swap-translate)); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(workspace-content),
   ::view-transition-old(workspace-content),
-  ::view-transition-new(workspace-content) {
+  ::view-transition-new(workspace-content),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
     animation: none;
   }
 }

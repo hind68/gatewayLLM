@@ -13,7 +13,8 @@
 .admin-modal-backdrop,
 .admin-drawer-backdrop,
 .admin-overflow-menu,
-.admin-filter-popover {
+.admin-filter-popover,
+.custom-dropdown-menu.admin-custom-dropdown {
   --admin-text: var(--ui-text-strong);
   --admin-muted: var(--text-muted);
   --admin-border: var(--ui-border-subtle);
@@ -30,10 +31,20 @@
   --admin-success-soft: #edf7f0;
   --admin-success: #37664a;
   --admin-card-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-  --admin-focus-ring: 0 0 0 3px rgba(93, 143, 202, 0.16);
+  /* Focus reads as a soft grey accent *inside* the field, never as an outer
+     coloured border: any red/rose outline would be indistinguishable from an
+     error state. Colour stays reserved for danger/invalid. */
+  --admin-focus-ring: inset 0 0 0 1px rgba(100, 116, 139, 0.16);
+  /* Buttons, checkboxes and radios can't show an inset ring legibly, so they
+     keep an outer one — same neutral grey. */
+  --admin-focus-ring-control: 0 0 0 2px rgba(100, 116, 139, 0.18);
   --admin-focus-ring-inset: inset 0 0 0 2px rgba(93, 143, 202, 0.18);
-  --admin-field-border: 1px solid rgba(31, 41, 55, 0.14);
-  --admin-field-border-focus: #9db1c9;
+  --admin-field-border: 1px solid #e5e7eb;
+  --admin-field-border-hover: #d1d5db;
+  --admin-field-border-focus: #d9dce2;
+  --admin-field-background: #fff;
+  --admin-field-disabled-background: #fafafa;
+  --admin-field-disabled-border: #ebedf0;
 }
 
 .admin-shell,
@@ -165,9 +176,14 @@
   padding: 0 12px;
   border: var(--admin-field-border);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--admin-field-background);
+  box-shadow: none;
   color: #8994a3;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.admin-search-field:hover {
+  border-color: var(--admin-field-border-hover);
 }
 
 .admin-search-field:focus-within,
@@ -175,7 +191,8 @@
 .admin-field select:focus,
 .admin-field textarea:focus,
 .inline-add-form input:focus,
-.inline-add-form select:focus {
+.inline-add-form select:focus,
+.model-logo-url-input:focus {
   border-color: var(--admin-field-border-focus);
   outline: 0;
   box-shadow: var(--admin-focus-ring);
@@ -282,8 +299,11 @@
 }
 
 .admin-overflow-trigger:hover,
-.admin-overflow-trigger:focus-visible {
-  background: var(--admin-neutral-100);
+.admin-overflow-trigger:focus-visible,
+.admin-overflow-trigger:active,
+.admin-overflow-trigger[aria-expanded="true"] {
+  background: transparent;
+  box-shadow: none;
   color: #050607;
 }
 
@@ -313,13 +333,34 @@
   font-size: 10px;
 }
 
-.filter-button.active {
-  border-color: #d7e3f5;
-  background: var(--admin-selected-soft);
-}
-
 .filter-button:hover:not(:disabled) {
   transform: none;
+}
+
+/* The "Filtres" trigger opens a menu of options, so it follows the same flat
+   dropdown language rather than the elevated secondary-button one. */
+.admin-button.secondary.filter-button {
+  border: var(--admin-field-border);
+  background: var(--admin-field-background);
+  box-shadow: none;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-button.secondary.filter-button:hover:not(:disabled) {
+  border-color: var(--admin-field-border-hover);
+  background: var(--admin-field-background);
+}
+
+.admin-button.secondary.filter-button:focus-visible,
+.admin-button.secondary.filter-button[aria-expanded="true"] {
+  border-color: var(--admin-field-border-focus);
+  outline: 0;
+  box-shadow: var(--admin-focus-ring);
+}
+
+.admin-button.secondary.filter-button.active {
+  border-color: #d7e3f5;
+  background: var(--admin-selected-soft);
 }
 
 /* Cards and overview */
@@ -402,12 +443,6 @@
   border-radius: 10px;
   background: var(--admin-neutral-100);
   color: #4d5560;
-}
-
-.admin-stat-icon img {
-  width: 19px;
-  height: 19px;
-  object-fit: contain;
 }
 
 .admin-stat-copy {
@@ -1331,19 +1366,46 @@
 .inline-add-form select,
 .admin-field input,
 .admin-field select,
-.admin-field textarea {
+.admin-field textarea,
+.model-logo-url-input {
   min-width: 0;
   width: 100%;
   border: var(--admin-field-border);
   border-radius: 9px;
-  background: #fff;
+  background: var(--admin-field-background);
+  box-shadow: none;
   color: var(--admin-text);
   font: inherit;
   font-size: 12px;
+  outline: 0;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.inline-add-form input:hover:not(:disabled):not(:read-only),
+.inline-add-form select:hover:not(:disabled),
+.admin-field input:hover:not(:disabled):not(:read-only),
+.admin-field select:hover:not(:disabled),
+.admin-field textarea:hover:not(:disabled):not(:read-only),
+.model-logo-url-input:hover:not(:disabled):not(:read-only) {
+  border-color: var(--admin-field-border-hover);
+}
+
+.inline-add-form input:disabled,
+.inline-add-form select:disabled,
+.admin-field input:disabled,
+.admin-field select:disabled,
+.admin-field textarea:disabled,
+.model-logo-url-input:disabled {
+  border-color: var(--admin-field-disabled-border);
+  background: var(--admin-field-disabled-background);
+  box-shadow: none;
+  color: var(--admin-muted);
+  cursor: not-allowed;
 }
 
 .inline-add-form input,
-.admin-field input {
+.admin-field input,
+.model-logo-url-input {
   height: 38px;
   padding: 0 11px;
 }
@@ -1365,7 +1427,7 @@
 .admin-field {
   display: grid;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
@@ -1380,35 +1442,95 @@
   min-width: 180px;
 }
 
+/* Administration dropdown language — one flat surface + thin border shared by
+   every select/combobox/filter/sort control. Closed controls never carry a
+   shadow; elevation is reserved for the floating menu. */
 .admin-custom-dropdown .custom-dropdown-trigger,
 .admin-field .custom-dropdown-trigger {
   width: 100%;
   min-height: 38px;
   padding: 0 11px;
-  border: 1px solid rgba(31, 41, 55, 0.12);
-  border-radius: 9px;
-  background: #fff;
+  border: var(--admin-field-border);
+  border-radius: 12px;
+  background: var(--admin-field-background);
+  box-shadow: none;
   color: var(--admin-text);
   font: inherit;
   font-size: 12px;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
+.admin-custom-dropdown .custom-dropdown-trigger:hover:not(:disabled),
+.admin-field .custom-dropdown-trigger:hover:not(:disabled) {
+  border-color: var(--admin-field-border-hover);
+  background: var(--admin-field-background);
+}
+
+.admin-custom-dropdown .custom-dropdown-trigger:focus-visible,
+.admin-field .custom-dropdown-trigger:focus-visible,
+.admin-custom-dropdown .custom-dropdown-trigger[aria-expanded="true"],
+.admin-field .custom-dropdown-trigger[aria-expanded="true"] {
+  border-color: var(--admin-field-border-focus) !important;
+  outline: 0;
+  box-shadow: var(--admin-focus-ring) !important;
+}
+
+.admin-custom-dropdown .custom-dropdown-trigger:disabled,
+.admin-field .custom-dropdown-trigger:disabled {
+  border-color: var(--admin-field-disabled-border);
+  background: var(--admin-field-disabled-background);
+  box-shadow: none;
+  color: var(--admin-muted);
+}
+
+/* Toolbar controls stay 40px tall to line up with the adjacent search field. */
 .admin-toolbar > .admin-custom-dropdown .custom-dropdown-trigger {
   min-height: 40px;
   height: 40px;
-  border-color: rgba(31, 41, 55, 0.11);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.88);
   font-size: 13px;
 }
 
-.admin-custom-dropdown .custom-dropdown-menu,
-.admin-modal .custom-dropdown-menu,
-.admin-drawer .custom-dropdown-menu,
-.admin-filter-popover .custom-dropdown-menu {
-  z-index: 30;
-  border-color: rgba(31, 41, 55, 0.1);
-  box-shadow: var(--shadow-md);
+.admin-custom-dropdown .custom-dropdown-trigger .down-arrow-icon,
+.admin-field .custom-dropdown-trigger .down-arrow-icon {
+  width: 8px;
+  height: 8px;
+  border-width: 1.4px;
+  color: #6b7280;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.admin-custom-dropdown .custom-dropdown-trigger[aria-expanded="true"] .down-arrow-icon,
+.admin-field .custom-dropdown-trigger[aria-expanded="true"] .down-arrow-icon {
+  transform: translateY(1px) rotate(225deg);
+}
+
+/* The menu is portalled to <body>, so it is scoped by the class the trigger's
+   root forwards onto it rather than by an admin ancestor. */
+.custom-dropdown-menu.admin-custom-dropdown {
+  z-index: 12000;
+  min-width: 0;
+  padding: 6px;
+  border: var(--admin-field-border);
+  border-radius: 12px;
+  background: var(--admin-field-background);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.custom-dropdown-menu.admin-custom-dropdown li {
+  border-radius: 8px;
+  color: var(--admin-text);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.custom-dropdown-menu.admin-custom-dropdown li:hover {
+  background: #f6f7f9;
+}
+
+.custom-dropdown-menu.admin-custom-dropdown li.selected {
+  background: var(--admin-selected-soft);
+  color: var(--admin-selected);
+  font-weight: 600;
 }
 
 .role-chip-grid,
@@ -1512,7 +1634,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 21px 22px 17px;
+  padding: 20px 22px 16px;
   border-bottom: 1px solid var(--admin-border);
 }
 
@@ -1530,22 +1652,24 @@
   line-height: 1.5;
 }
 
+/* Spacing scale: 8px label->field, 16px between field rows and groups,
+   20px for the outer padding. Actions carry their own bottom padding. */
 .admin-modal-form {
   display: grid;
-  gap: 14px;
-  padding: 20px 22px 22px;
+  gap: 16px;
+  padding: 20px 22px 0;
 }
 
 .model-modal-form {
-  gap: 12px;
-  padding-top: 16px;
+  gap: 16px;
+  padding-top: 20px;
 }
 
 .model-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 12px 14px;
+  gap: 16px 14px;
 }
 
 .model-form-grid textarea {
@@ -1557,7 +1681,7 @@
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px 14px;
 }
 
 .checkbox-line {
@@ -1576,11 +1700,13 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 18px 22px 22px;
+  padding: 16px 22px 20px;
 }
 
+/* Negative side margins let the separator span the modal's full width; the
+   form's padding-bottom is 0 so this row owns the bottom spacing. */
 .admin-modal-form .admin-modal-actions {
-  margin: 2px -22px -22px;
+  margin: 0 -22px;
   border-top: 1px solid var(--admin-border);
 }
 
@@ -1592,14 +1718,15 @@
   line-height: 1.55;
 }
 
+/* Logo reads as a normal form field, not a sub-card: no outer frame, so the
+   preview and the input sit on the form's own surface like every other row. */
+/* flex-start, not center: the control column is taller than the preview once
+   the help line wraps under the input, so centring would drop the preview
+   below the input it is meant to sit level with. */
 .model-logo-picker {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px;
-  border: 1px solid var(--admin-border);
-  border-radius: 11px;
-  background: var(--ui-canvas-cool);
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .model-logo-field {
@@ -1640,9 +1767,11 @@
 .model-logo-source button.active {
   background: #fff;
   color: var(--admin-selected);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
+/* Input and "Retirer" sit on one row; the help/error line wraps directly under
+   them (flex-basis: 100% below) with a tighter row gap than the column gap. */
 .model-logo-control {
   display: flex;
   flex: 1 1 auto;
@@ -1652,23 +1781,18 @@
   min-width: 0;
 }
 
+/* Only the layout differs from a standard admin field; the surface, radius,
+   height and focus come from the shared field rules above. */
 .model-logo-url-input {
-  flex: 1 1 260px;
+  flex: 1 1 220px;
   min-width: 0;
-  min-height: 38px;
-  padding: 0 11px;
-  border: var(--admin-field-border);
-  border-radius: 9px;
-  background: #fff;
-  color: var(--admin-text);
-  font: inherit;
-  font-size: 12px;
-  outline: 0;
 }
 
-.model-logo-url-input:focus {
-  border-color: var(--admin-field-border-focus);
-  box-shadow: var(--admin-focus-ring);
+/* Both modes keep the same row height so switching URL <-> Local never shifts
+   the layout. */
+.model-logo-control .model-logo-file-button {
+  min-height: 38px;
+  height: 38px;
 }
 
 .model-logo-control .admin-field-help,
@@ -1676,19 +1800,27 @@
   flex-basis: 100%;
 }
 
+/* Matches the 38px height and 9px radius of the URL input beside it, so the
+   two read as one aligned row. */
 .model-logo-preview {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
   background: var(--admin-neutral-100);
+  box-shadow: none;
+  overflow: hidden;
+  color: var(--ui-blue-900);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .model-logo-preview img {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
 }
 
 .model-logo-file-button input {
@@ -1747,16 +1879,70 @@
 .admin-shell button:focus-visible,
 .admin-shell input:focus-visible,
 .admin-shell textarea:focus-visible,
+.admin-shell select:focus-visible,
 .admin-modal button:focus-visible,
 .admin-modal input:focus-visible,
 .admin-modal textarea:focus-visible,
+.admin-modal select:focus-visible,
 .admin-drawer button:focus-visible,
 .admin-drawer input:focus-visible,
 .admin-drawer textarea:focus-visible,
+.admin-drawer select:focus-visible,
 .admin-overflow-menu button:focus-visible,
 .admin-filter-popover button:focus-visible {
   outline: 0;
   box-shadow: var(--admin-focus-ring);
+}
+
+/* Non-text controls: the inset field ring is invisible on a native checkbox or
+   on a filled button, so they take the neutral outer ring instead. */
+.admin-shell button:focus-visible,
+.admin-modal button:focus-visible,
+.admin-drawer button:focus-visible,
+.admin-overflow-menu button:focus-visible,
+.admin-filter-popover button:focus-visible,
+.admin-shell input[type="checkbox"]:focus-visible,
+.admin-shell input[type="radio"]:focus-visible,
+.admin-modal input[type="checkbox"]:focus-visible,
+.admin-modal input[type="radio"]:focus-visible,
+.admin-drawer input[type="checkbox"]:focus-visible,
+.admin-drawer input[type="radio"]:focus-visible,
+.admin-filter-popover input[type="checkbox"]:focus-visible,
+.admin-filter-popover input[type="radio"]:focus-visible {
+  box-shadow: var(--admin-focus-ring-control);
+}
+
+.admin-shell input:focus-visible,
+.admin-shell textarea:focus-visible,
+.admin-shell select:focus-visible,
+.admin-modal input:focus-visible,
+.admin-modal textarea:focus-visible,
+.admin-modal select:focus-visible,
+.admin-drawer input:focus-visible,
+.admin-drawer textarea:focus-visible,
+.admin-drawer select:focus-visible,
+.admin-filter-popover input:focus-visible,
+.admin-filter-popover textarea:focus-visible,
+.admin-filter-popover select:focus-visible {
+  border-color: var(--admin-field-border-focus);
+}
+
+/* Suppress the browser's default invalid styling while the field is at rest,
+   but never at the expense of the focus indicator: `required` fields start out
+   :invalid, so an unscoped reset here would leave them with no visible focus. */
+.admin-shell input:invalid:not(:focus),
+.admin-shell textarea:invalid:not(:focus),
+.admin-shell select:invalid:not(:focus),
+.admin-modal input:invalid:not(:focus),
+.admin-modal textarea:invalid:not(:focus),
+.admin-modal select:invalid:not(:focus),
+.admin-drawer input:invalid:not(:focus),
+.admin-drawer textarea:invalid:not(:focus),
+.admin-drawer select:invalid:not(:focus),
+.admin-filter-popover input:invalid:not(:focus),
+.admin-filter-popover textarea:invalid:not(:focus),
+.admin-filter-popover select:invalid:not(:focus) {
+  box-shadow: none;
 }
 
 .admin-shell .sr-only,
@@ -2071,14 +2257,16 @@
   grid-column: 1 / -1;
 }
 
+/* 3px frame + 28px buttons = a 34px control, in the 34-36px band. */
 .model-logo-source {
-  padding: 2px;
+  padding: 3px;
   border-radius: 9px;
 }
 
 .model-logo-source button {
-  min-height: 24px;
-  min-width: 46px;
-  padding: 0 9px;
+  min-height: 28px;
+  min-width: 44px;
+  padding: 0 10px;
   border-radius: 7px;
+  transition: background-color 140ms ease, color 140ms ease;
 }

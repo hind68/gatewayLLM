@@ -318,7 +318,10 @@
   place-items: center;
 }
 
-.icon-button:hover {
+.icon-button:hover,
+.icon-button:focus-visible,
+.icon-button:active,
+.icon-button[aria-expanded="true"] {
   background: transparent;
   color: #111111;
 }

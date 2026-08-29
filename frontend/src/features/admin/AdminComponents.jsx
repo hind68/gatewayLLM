@@ -43,12 +43,13 @@ export function Icon({ name, size = 18, strokeWidth = 1.8 }) {
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
     filter: <path d="M4 5h16l-6.5 7.5V19l-3 1.5v-8Z" />,
-    shieldCheck: <><path d="M12 2.2c1.7 1.4 3.9 2.1 6 2.1.4 1.2.6 2.4.6 3.7 0 5.7-2.9 9.9-6.6 11.8-3.7-1.9-6.6-6.1-6.6-11.8 0-1.3.2-2.5.6-3.7 2.1 0 4.3-.7 6-2.1Z" /><path d="m8.7 12.3 2.2 2.2 4.4-4.9" /></>,
-    bentoGrid: <><rect x="3" y="3" width="7" height="6" rx="1.3" /><rect x="13" y="3" width="8" height="10" rx="1.3" /><rect x="3" y="12" width="8" height="9" rx="1.3" /><rect x="14" y="16" width="7" height="5" rx="1.3" /></>,
-    chatSpark: <><path d="M5 3h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none" /><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none" /><path d="M19.5 2.5q.4 1.6 1.4 2.6t2.6 1.4q-1.6.4-2.6 1.4t-1.4 2.6q-.4-1.6-1.4-2.6t-2.6-1.4q1.6-.4 2.6-1.4t1.4-2.6Z" /></>,
-    keyRing: <><circle cx="7" cy="7" r="4" /><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" /><path d="M10 10 20 20M14.5 15.5l2-2M17 18l2-2" /></>,
-    docSearch: <><path d="M6.5 3h7l4 4v13a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13.5 3v4h4" /><path d="M8.5 10.5h4M8.5 13.5h3" /><circle cx="15" cy="16" r="2.6" /><path d="m17 18 2.3 2.3" /></>,
-    peopleGroup: <><circle cx="12" cy="7.5" r="2.6" /><path d="M7 19.5v-1.2c0-2.7 2.2-4.8 5-4.8s5 2.1 5 4.8v1.2" /><circle cx="4.5" cy="10" r="2" /><path d="M1.5 19v-.8c0-1.9 1.3-3.4 3-3.9" /><circle cx="19.5" cy="10" r="2" /><path d="M22.5 19v-.8c0-1.9-1.3-3.4-3-3.9" /></>,
+    shieldCheck: <><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></>,
+    bentoGrid: <><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></>,
+    chatSpark: <><path d="M12 6V2H8" /><path d="M15 11v2" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="M20 16a2 2 0 0 1-2 2H8.83a2 2 0 0 0-1.42.59l-2.2 2.2A.71.71 0 0 1 4 20.29V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" /><path d="M9 11v2" /></>,
+    keyRing: <><path d="M2.59 17.41A2 2 0 0 0 2 18.83V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.17a2 2 0 0 0 1.42-.59l.81-.81a6.5 6.5 0 1 0-4-4z" /><circle cx="16.5" cy="7.5" r=".5" fill="currentColor" stroke="none" /></>,
+    docSearch: <><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.7.71l3.59 3.59A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /><path d="M14 2v5a1 1 0 0 0 1 1h5" /><circle cx="11.5" cy="14.5" r="2.5" /><path d="m13.3 16.3 1.7 1.7" /></>,
+    peopleGroup: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.74" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" /></>,
+    messageLines: <><path d="M22 17a2 2 0 0 1-2 2H6.83a2 2 0 0 0-1.42.59l-2.2 2.2A.71.71 0 0 1 2 21.29V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /><path d="M8 10h6" /><path d="M8 14h8" /></>,
   }
   return <svg {...common}>{paths[name] || paths.grid}</svg>
 }
@@ -77,10 +78,9 @@ export function AdminTabs({ value, onChange, tabs, label }) {
   )
 }
 
-export function StatCard({ icon, iconPng, label, value, context, onClick }) {
-  const [imageFailed, setImageFailed] = useState(false)
+export function StatCard({ icon, label, value, context, onClick }) {
   const Tag = onClick ? 'button' : 'div'
-  return <Tag type={onClick ? 'button' : undefined} className="admin-stat-card" onClick={onClick}><span className="admin-stat-icon">{iconPng && !imageFailed ? <img src={iconPng} alt="" onError={() => setImageFailed(true)} /> : <Icon name={icon} size={17} />}</span><span className="admin-stat-copy"><span>{label}</span><strong>{value}</strong><small>{context}</small></span></Tag>
+  return <Tag type={onClick ? 'button' : undefined} className="admin-stat-card" onClick={onClick}><span className="admin-stat-icon"><Icon name={icon} size={22} strokeWidth={1.4} /></span><span className="admin-stat-copy"><span>{label}</span><strong>{value}</strong><small>{context}</small></span></Tag>
 }
 
 export function StatusBadge({ status, label, className = '' }) {

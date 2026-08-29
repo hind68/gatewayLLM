@@ -126,27 +126,12 @@
   --surface-divider-y: inset 0 -1px rgba(15, 23, 42, 0.055);
 }
 
-/* Application shells and section dividers */
-.sidebar {
-  border-right: 0;
-  box-shadow: var(--surface-divider-x), 8px 0 24px rgba(15, 23, 42, 0.025);
-}
-
-.sidebar-primary-nav,
-.sidebar-admin-navigation,
-.sidebar-user {
-  border-color: transparent;
-}
-
-.sidebar-primary-nav,
-.sidebar-admin-navigation,
-.sidebar-user {
-  box-shadow: inset 0 1px rgba(15, 23, 42, 0.045);
-}
-
-.sidebar-primary-nav {
-  box-shadow: var(--surface-divider-y);
-}
+/* The sidebar keeps its own 1px border system (sidebar.css): a single
+   border-right on the root plus border-top/bottom separators, all drawn from
+   --sidebar-divider. Replacing them with box-shadows here produced a heavier,
+   discontinuous edge — the vertical inset ran at a different opacity than the
+   horizontal ones, and the outer glow blurred the line — so the sidebar is
+   deliberately left out of the shadow-based divider system. */
 
 /* Primary cards and elevated containers */
 .composer,
@@ -220,17 +205,6 @@
 .document-success {
   border: 0;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-}
-
-.document-detected-page,
-.document-secure-page,
-.document-secure-placeholder,
-.document-threat-summary,
-.document-inspector-title span,
-.document-docx-preview td,
-.document-docx-preview th {
-  border: 0;
-  box-shadow: var(--surface-shadow-xs);
 }
 
 .dlp-alert,

@@ -177,7 +177,7 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
   opacity: 1;
   transform: translateY(0);
   transition:
@@ -215,8 +215,8 @@
   max-width: 100%;
   max-height: 170px;
   overflow-x: auto;
-  overflow-y: hidden;
-  padding: 4px 50px 6px 4px;
+  overflow-y: visible;
+  padding: 9px 50px 6px 4px;
   scrollbar-width: none;
 }
 
@@ -347,13 +347,13 @@
   position: absolute;
   top: -5px;
   right: -5px;
-  z-index: 3;
+  z-index: 60;
   width: 18px;
   height: 18px;
   min-width: 18px;
   border: none;
   border-radius: 50%;
-  background: #111111;
+  background: rgba(17, 17, 17, 0.86);
   color: #ffffff;
   cursor: pointer;
   display: flex;
@@ -368,7 +368,7 @@
 }
 
 .composer button.attachment-remove-button:hover {
-  background: #000000;
+  background: rgba(17, 17, 17, 0.94);
 }
 
 .composer button.attachment-remove-button span,

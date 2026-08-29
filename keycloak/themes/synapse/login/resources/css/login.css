@@ -24,6 +24,7 @@ body.login-pf {
 }
 
 .login-pf-page {
+  position: relative;
   display: flex;
   min-height: 100vh;
   box-sizing: border-box;
@@ -33,7 +34,6 @@ body.login-pf {
   padding: 32px 20px;
 }
 
-#kc-header,
 .login-pf-page > .card-pf {
   width: min(100%, 430px);
 }
@@ -43,30 +43,53 @@ body.login-pf {
   color: var(--synapse-navy);
 }
 
+/* Branding is pinned to the top-left so it lands where the application's
+   sidebar brand will be once the user is signed in; taking it out of the flow
+   leaves the card centred on its own. Geometry mirrors .sidebar-brand /
+   .sidebar-logo: a 56x56 logo box holding a 32x32 mark, so the mark's centre
+   sits at 28px/28px from the viewport corner exactly as in the sidebar. */
+#kc-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+}
+
 #kc-header-wrapper {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 0 0 22px;
+  justify-content: flex-start;
+  height: 56px;
+  gap: 0;
+  padding: 0;
   font-size: 0;
-  font-weight: 650;
-  letter-spacing: -.04em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
+/* 12px padding carves a 32x32 content box out of the 56x56 logo box, and
+   `contain` fits the mark inside it without distorting it — the exact result of
+   the sidebar's <img> at 32x32 with object-fit: contain (a 1141x1326 mark
+   renders 27.5x32, not 32x32). */
 #kc-header-wrapper::before {
   display: block;
-  width: 42px;
-  height: 48px;
-  flex: 0 0 42px;
+  box-sizing: border-box;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  padding: 12px;
   content: "";
-  background: url("../img/logo.png") center / contain no-repeat;
+  background: url("../img/logo.png") center / contain no-repeat content-box;
 }
 
+/* Matches .sidebar-brand span. */
 #kc-header-wrapper::after {
-  color: var(--synapse-navy);
+  color: #1f2937;
   content: "Synapse";
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .login-pf-page > .card-pf {
@@ -334,7 +357,16 @@ input[aria-invalid="true"],
     padding: 24px 20px 26px;
   }
 
+  /* Too narrow for a corner anchor: the brand returns to the normal flow,
+     centred above the card. */
+  #kc-header {
+    position: static;
+    width: min(100%, 430px);
+  }
+
   #kc-header-wrapper {
+    height: auto;
+    justify-content: center;
     padding-bottom: 18px;
   }
 }

@@ -287,7 +287,7 @@ export default function Sidebar({
                       onClick={() => admin?.setAdminSection?.(item.id)}
                     >
                       <span className="sidebar-icon admin-nav-icon" aria-hidden="true">
-                        {item.iconPng ? <img src={item.iconPng} alt="" /> : <Icon name={item.icon} size={19} />}
+                        <Icon name={item.icon} size={19} strokeWidth={1.4} />
                       </span>
                       <span>{item.label}</span>
                     </button>
@@ -300,21 +300,21 @@ export default function Sidebar({
         </div>
 
         {admin?.isAdmin && (
-          <nav className="sidebar-admin-navigation" aria-label={isAdminMode ? 'Retour au chat' : 'Administration'}>
+          <nav className="sidebar-admin-navigation" aria-label={isAdminMode ? 'Espace utilisateur' : 'Administration'}>
             <button
               type="button"
-              title={isAdminMode ? 'Retour au chat' : 'Administration'}
-              aria-label={isAdminMode ? 'Retour au chat' : 'Administration'}
+              title={isAdminMode ? 'Espace utilisateur' : 'Administration'}
+              aria-label={isAdminMode ? 'Espace utilisateur' : 'Administration'}
               onClick={isAdminMode ? closeAdminDashboard : handleAdminClick}
             >
               <span className="sidebar-icon sidebar-mode-control chat-action" aria-hidden="true">
                 <img src="/assets/administrateur.png" alt="" />
               </span>
               <span className="sidebar-icon sidebar-mode-control admin-action admin-back-icon" aria-hidden="true">
-                <img src="/assets/return-to-chat.png" alt="" />
+                <img src="/assets/message.png" alt="" />
               </span>
               <span className="sidebar-mode-label chat-action">Administration</span>
-              <span className="sidebar-mode-label admin-action">Retour au chat</span>
+              <span className="sidebar-mode-label admin-action">Espace utilisateur</span>
             </button>
           </nav>
         )}

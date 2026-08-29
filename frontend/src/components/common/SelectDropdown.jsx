@@ -87,7 +87,7 @@ export default function SelectDropdown({
     <ul
       ref={menuRef}
       id={menuId}
-      className="custom-dropdown-menu custom-dropdown-menu-portal"
+      className={`custom-dropdown-menu custom-dropdown-menu-portal ${className}`.trim()}
       role="listbox"
       aria-label={ariaLabel}
       style={menuPosition || { visibility: 'hidden' }}
