@@ -115,6 +115,20 @@
         "attributes": {}
       },
       {
+        "id": "1f02c7f2-3aac-4e27-a98f-539a0ff870cf",
+        "name": "SUPER_ADMIN",
+        "description": "Protected Synapse super administrator",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "ADMIN"
+          ]
+        },
+        "clientRole": false,
+        "containerId": "f653d97a-839b-4386-9f3d-6c89ca252e91",
+        "attributes": {}
+      },
+      {
         "id": "b194bef7-53dc-403e-83f0-85fcdeaac6cd",
         "name": "ADMIN",
         "description": "Gateway administrator",
@@ -573,7 +587,8 @@
       "groups": [],
       "realmRoles": [
         "USER",
-        "ADMIN"
+        "ADMIN",
+        "SUPER_ADMIN"
       ],
       "clientRoles": {},
       "credentials": [

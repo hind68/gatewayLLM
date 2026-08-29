@@ -24,6 +24,16 @@ export function formatEntity(value) {
   return labels[value] || String(value || 'Ressource').replaceAll('_', ' ')
 }
 
+export function restrictionModelOptions(models) {
+  return (Array.isArray(models) ? models : [])
+    .filter((model) => model.statut === 'ACTIF' && model.providerStatus === 'ACTIF')
+    .map((model) => ({
+      alias: model.aliasInterne || model.alias,
+      displayName: model.nomAffichage || model.displayName || model.aliasInterne || model.alias,
+    }))
+    .filter((model) => Boolean(model.alias))
+}
+
 export function formatDateFilterValue(value) {
   const [year, month, day] = String(value || '').split('-')
   return year && month && day ? `${day}/${month}/${year}` : ''

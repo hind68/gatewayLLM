@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react'
-import { getInitials, hasAdminRole } from '../../utils/authUtils'
+import { getInitials, getRoleLabel } from '../../utils/authUtils'
 import { AuthContext } from '../../AuthProvider'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
@@ -58,7 +58,7 @@ export default function Sidebar({
     'Utilisateur'
   const initials = getInitials(displayName)
   const email = keycloak?.tokenParsed?.email || ''
-  const roleLabel = hasAdminRole(keycloak?.token) ? 'Administrateur' : 'Utilisateur'
+  const roleLabel = getRoleLabel(keycloak?.token)
 
   // Keep the same sidebar shell mounted and only switch its navigation content.
   // This is what allows the chat navigation to visually transition into admin navigation.

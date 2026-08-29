@@ -45,6 +45,27 @@ ensure_role() {
 
 ensure_role INTERN "Internal Synapse user"
 ensure_role EXTERN "External Synapse user"
+ensure_role ADMIN "Gateway administrator"
+ensure_role SUPER_ADMIN "Protected Synapse super administrator"
+
+# SUPER_ADMIN inherits every ADMIN permission while remaining distinguishable
+# for protected identity-management operations.
+kcadm add-roles -r "$REALM" --rname SUPER_ADMIN --rolename ADMIN
+
+# Guarantee one explicitly named, recoverable bootstrap account without
+# changing its password. Refuse ambiguous matches instead of granting the
+# highest privilege to multiple accounts.
+super_admin_username="${KEYCLOAK_SUPER_ADMIN_USERNAME:-admin}"
+super_admin_ids="$(kcadm get users -r "$REALM" -q username="$super_admin_username" -q exact=true --fields id --format csv --noquotes | tr -d '\r')"
+super_admin_count=0
+for super_admin_id in $super_admin_ids; do
+  super_admin_count=$((super_admin_count + 1))
+done
+if [ "$super_admin_count" -ne 1 ]; then
+  echo "Expected exactly one Keycloak user named ${super_admin_username}; found ${super_admin_count}. SUPER_ADMIN was not assigned." >&2
+  exit 1
+fi
+kcadm add-roles -r "$REALM" --uid "$super_admin_ids" --rolename SUPER_ADMIN
 
 ensure_user_profile() {
   username="$1"

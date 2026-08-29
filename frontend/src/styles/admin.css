@@ -729,6 +729,7 @@
   border-radius: 999px;
   background: #3f454d;
   color: #fff;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.2px;

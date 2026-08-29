@@ -116,6 +116,7 @@ services:
       KEYCLOAK_DEMO_PASSWORD: ${KEYCLOAK_DEMO_PASSWORD:?Set KEYCLOAK_DEMO_PASSWORD in .env}
       GATEWAY_ADMIN_CLIENT_SECRET: ${GATEWAY_ADMIN_CLIENT_SECRET:?Set GATEWAY_ADMIN_CLIENT_SECRET in .env}
       KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-synapse}
+      KEYCLOAK_SUPER_ADMIN_USERNAME: ${KEYCLOAK_SUPER_ADMIN_USERNAME:-admin}
     entrypoint: ["/bin/sh", "/opt/keycloak/provision.sh"]
     volumes:
       - ./keycloak/provision.sh:/opt/keycloak/provision.sh:ro
