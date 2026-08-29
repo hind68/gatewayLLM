@@ -28,7 +28,7 @@ public class KeycloakAdminClient {
             @Value("${keycloak.admin.token-realm:synapse}") String adminRealm,
             @Value("${keycloak.admin.client-id:gateway-admin}") String clientId,
             @Value("${keycloak.admin.client-secret:}") String clientSecret,
-            @Value("${keycloak.admin.managed-roles:ADMIN,INTERN,EXTERN}") String managedRoles
+            @Value("${keycloak.admin.managed-roles:SUPER_ADMIN,ADMIN,INTERN,EXTERN}") String managedRoles
     ) {
         this.client = WebClient.builder().baseUrl(baseUrl).build();
         this.realm = realm;
@@ -83,6 +83,13 @@ public class KeycloakAdminClient {
                 .headers(headers -> headers.setBearerAuth(adminToken()))
                 .retrieve().bodyToFlux(Map.class).map(value -> (Map<String, Object>) value).collectList().block(timeout);
         return managedRolesOnly(roles);
+    }
+
+    public long countUsersWithRealmRole(String roleName) {
+        return client.get().uri(uri -> uri.path("/admin/realms/{realm}/roles/{role}/users")
+                        .queryParam("max", 200).build(realm, normalizeRoleName(roleName)))
+                .headers(headers -> headers.setBearerAuth(adminToken()))
+                .retrieve().bodyToFlux(Map.class).count().block(timeout);
     }
 
     public void setRealmRoles(String userId, List<String> roleNames) {

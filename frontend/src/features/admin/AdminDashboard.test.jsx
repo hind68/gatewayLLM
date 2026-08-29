@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { RolesSection } from './AdminDashboard'
-import { formatDateFilterDigits, formatDateFilterValue, parseDateFilterValue } from './AdminUtils'
+import { formatDateFilterDigits, formatDateFilterValue, parseDateFilterValue, restrictionModelOptions } from './AdminUtils'
 
 const baseProps = {
   errorFor: () => '',
@@ -23,6 +23,16 @@ const baseProps = {
   onAddWord: vi.fn(),
   onRemoveWord: vi.fn(),
 }
+
+describe('restrictionModelOptions', () => {
+  it('uses the full active admin catalog regardless of the current user catalog', () => {
+    expect(restrictionModelOptions([
+      { aliasInterne: 'secure-gpt', nomAffichage: 'OpenAI GPT-4o mini', statut: 'ACTIF', providerStatus: 'ACTIF' },
+      { aliasInterne: 'secure-claude', nomAffichage: 'Claude', statut: 'INACTIF', providerStatus: 'ACTIF' },
+      { aliasInterne: 'secure-old', nomAffichage: 'Old', statut: 'ACTIF', providerStatus: 'INACTIF' },
+    ])).toEqual([{ alias: 'secure-gpt', displayName: 'OpenAI GPT-4o mini' }])
+  })
+})
 
 describe('RolesSection', () => {
   it('shows role controls after role details finish loading', () => {

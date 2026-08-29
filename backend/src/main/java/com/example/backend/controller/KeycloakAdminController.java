@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin/keycloak")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
 public class KeycloakAdminController {
     private final KeycloakAdminClient keycloak;
     private final AuditLogRepository auditLogs;
@@ -30,6 +30,7 @@ public class KeycloakAdminController {
     }
 
     @PostMapping("/users")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
     public void createUser(@RequestBody Map<String, Object> payload, JwtAuthenticationToken auth) {
         keycloak.createUser(payload);
@@ -37,7 +38,9 @@ public class KeycloakAdminController {
     }
 
     @PatchMapping("/users/{id}/enabled")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public void setEnabled(@PathVariable String id, @RequestParam boolean enabled, JwtAuthenticationToken auth) {
+        if (!enabled) requireAnotherSuperAdmin(id);
         keycloak.setEnabled(id, enabled);
         audit(enabled ? "ENABLE" : "DISABLE", "KEYCLOAK_USER", id, auth);
     }
@@ -49,13 +52,23 @@ public class KeycloakAdminController {
     public List<Map<String, Object>> userRoles(@PathVariable String id) { return keycloak.userRealmRoles(id); }
 
     @PutMapping("/users/{id}/roles")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public void setRoles(@PathVariable String id, @RequestBody Map<String, List<String>> payload, JwtAuthenticationToken auth) {
         List<String> roles = payload.getOrDefault("roles", List.of());
         if (roles.size() != 1 || roles.get(0) == null || roles.get(0).isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exactly one managed role is required");
         }
+        if (!"SUPER_ADMIN".equalsIgnoreCase(roles.get(0))) requireAnotherSuperAdmin(id);
         keycloak.setRealmRoles(id, roles);
         audit("UPDATE_ROLES", "KEYCLOAK_USER", id, auth);
+    }
+
+    private void requireAnotherSuperAdmin(String userId) {
+        boolean targetIsSuperAdmin = keycloak.userRealmRoles(userId).stream()
+                .anyMatch(role -> "SUPER_ADMIN".equalsIgnoreCase(String.valueOf(role.get("name"))));
+        if (targetIsSuperAdmin && keycloak.countUsersWithRealmRole("SUPER_ADMIN") <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The final super administrator cannot be disabled or demoted");
+        }
     }
 
     private void audit(String action, String entity, String id, JwtAuthenticationToken auth) {
