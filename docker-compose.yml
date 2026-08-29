@@ -54,6 +54,8 @@ services:
       DLP_MAX_ZIP_DEPTH: "3"
       DLP_LOG_LEVEL: "INFO"
       DLP_ADMIN_KEY: ${DLP_ADMIN_KEY:-dev-dlp-admin}
+    volumes:
+      - ./dlp/app/detectors/patterns.json:/app/app/detectors/patterns.json
     restart: unless-stopped
     healthcheck:
       test:
@@ -133,6 +135,7 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-litellm}
       DLP_BASE_URL: http://dlp-service:8000
       DLP_ADMIN_KEY: ${DLP_ADMIN_KEY:-dev-dlp-admin}
+      DLP_PATTERNS_FILE: /app/config/patterns.json
       KEYCLOAK_ADMIN_BASE_URL: http://keycloak:8080
       KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8080}/realms/synapse
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/synapse/protocol/openid-connect/certs
@@ -142,6 +145,7 @@ services:
       - "${BACKEND_HOST_PORT:-8081}:8081"
     volumes:
       - backend_attachment_data:/app/storage/attachments
+      - ./dlp/app/detectors/patterns.json:/app/config/patterns.json
     depends_on:
       postgres:
         condition: service_healthy

@@ -70,8 +70,7 @@
   --space-6: 24px;
 
   /* z-index scale for the overlay surfaces named in the audit (dropdowns,
-     popovers, modals, toasts, panels). Every value below is unchanged from
-     before this pass — this only gives the repeated ones a shared name.
+     popovers, modals, toasts, panels). These give repeated values a shared name.
      Elements that must sit above one specific sibling (a dropdown nested
      inside a modal, the elevated confirm-dialog backdrop, the collapsed-
      sidebar account popover, the panel resize handle...) keep their own
@@ -82,7 +81,9 @@
   --z-flyout: 80;
   --z-dropdown: 90;
   --z-dialog-backdrop: 100;
-  --z-toast: 9999;
+  /* Notifications must remain visible above portalled admin drawers,
+     dialogs, filter popovers, and dropdown menus (currently up to 12000). */
+  --z-toast: 13000;
 }
 
 /* App-scoped layout tokens */

@@ -23,3 +23,25 @@ export function formatEntity(value) {
   const labels = { UserLlmRestriction: 'Restriction de modèle', USER_LLM_RESTRICTION: 'Restriction de modèle', USER_BANNED_WORD: 'Mot banni utilisateur', GLOBAL_BANNED_WORD: 'Mot banni global', LLM_MODEL: 'Modèle', PROVIDER: 'Fournisseur', DLP_PATTERN: 'Pattern DLP' }
   return labels[value] || String(value || 'Ressource').replaceAll('_', ' ')
 }
+
+export function formatDateFilterValue(value) {
+  const [year, month, day] = String(value || '').split('-')
+  return year && month && day ? `${day}/${month}/${year}` : ''
+}
+
+export function formatDateFilterDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8)
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
+}
+
+export function parseDateFilterValue(value) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(value || ''))
+  if (!match) return ''
+  const [, day, month, year] = match
+  const candidate = new Date(Number(year), Number(month) - 1, Number(day))
+  return candidate.getFullYear() === Number(year)
+    && candidate.getMonth() === Number(month) - 1
+    && candidate.getDate() === Number(day)
+    ? `${year}-${month}-${day}`
+    : ''
+}

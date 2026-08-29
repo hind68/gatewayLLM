@@ -60,11 +60,10 @@ import {
   Modal,
   OverflowMenu,
   Pagination,
-  Skeleton,
   StatCard,
   StatusBadge,
 } from './AdminComponents'
-import { formatAction, formatEntity } from './AdminUtils'
+import { formatAction, formatDateFilterDigits, formatDateFilterValue, formatEntity, parseDateFilterValue } from './AdminUtils'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isUuid = (value) => UUID_PATTERN.test(String(value || ''))
@@ -414,16 +413,16 @@ function OverviewSection({ loading, errors, users, activeModels, adminModels, pa
   return (
     <>
       <div className="admin-stat-grid">
-        <StatCard icon="users" iconPng="/assets/admin-users.png" label="Utilisateurs" value={<Metric isLoading={loading('users')} error={errors('users')} value={users.length} />} context="Comptes connus" onClick={() => onSectionChange('users')} />
-        <StatCard icon="spark" iconPng="/assets/admin-models.png" label="Modèles actifs" value={<Metric isLoading={loading('models')} error={errors('models')} value={activeModels} />} context={`${adminModels.length} configurés`} onClick={() => onSectionChange('models')} />
-        <StatCard icon="shield" iconPng="/assets/admin-security.png" label="Patterns DLP" value={<Metric isLoading={loading('patterns')} error={errors('patterns')} value={patterns.length} />} context={`${activePatterns} actifs`} onClick={() => onSectionChange('security')} />
-        <StatCard icon="activity" iconPng="/assets/admin-audit-log-cropped.png" label="Messages filtrés" value={<Metric isLoading={loading('overview')} error={errors('overview')} value={overviewMessages.length} />} context={blockedToday ? `${blockedToday} bloqués aujourd’hui` : 'Aucun blocage aujourd’hui'} onClick={() => onSectionChange('audit')} />
+        <StatCard icon="users" iconPng="/assets/admin-icons/users.png" label="Utilisateurs" value={<Metric isLoading={loading('users')} error={errors('users')} value={users.length} />} context="Comptes connus" onClick={() => onSectionChange('users')} />
+        <StatCard icon="spark" iconPng="/assets/admin-icons/models.png" label="Modèles actifs" value={<Metric isLoading={loading('models')} error={errors('models')} value={activeModels} />} context={`${adminModels.length} configurés`} onClick={() => onSectionChange('models')} />
+        <StatCard icon="shield" iconPng="/assets/admin-icons/security.png" label="Patterns DLP" value={<Metric isLoading={loading('patterns')} error={errors('patterns')} value={patterns.length} />} context={`${activePatterns} actifs`} onClick={() => onSectionChange('security')} />
+        <StatCard icon="activity" iconPng="/assets/admin-icons/audit.png" label="Messages filtrés" value={<Metric isLoading={loading('overview')} error={errors('overview')} value={overviewMessages.length} />} context={blockedToday ? `${blockedToday} bloqués aujourd’hui` : 'Aucun blocage aujourd’hui'} onClick={() => onSectionChange('audit')} />
       </div>
 
       <div className="admin-overview-grid">
         <section className="admin-card admin-trend-card">
           <SectionHeading title="Incidents DLP · 7 derniers jours" context={`${overviewMessages.length} événements`} />
-          {loading('overview') ? <Skeleton rows={4} /> : errors('overview') ? <ErrorState message={errors('overview')} /> : (
+          {loading('overview') ? <QuietLoading /> : errors('overview') ? <ErrorState message={errors('overview')} /> : (
             <div className="admin-bar-chart" aria-label="Incidents DLP sur les sept derniers jours">
               {chartData.days.map((day) => <div className="admin-bar-column" key={day.date.toISOString()}><strong>{day.count}</strong><div className="admin-bar-track"><i style={{ height: `${Math.max(4, (day.count / chartData.max) * 100)}%` }} /></div><span>{day.label}</span></div>)}
             </div>
@@ -441,7 +440,7 @@ function OverviewSection({ loading, errors, users, activeModels, adminModels, pa
 
         <section className="admin-card admin-recent-card">
           <SectionHeading title="Incidents récents" context={recentIncidents.length ? `${recentIncidents.length} affichés` : undefined} />
-          {loading('overview') ? <Skeleton rows={4} /> : errors('overview') ? <ErrorState message={errors('overview')} /> : recentIncidents.length ? (
+          {loading('overview') ? <QuietLoading /> : errors('overview') ? <ErrorState message={errors('overview')} /> : recentIncidents.length ? (
             <div className="admin-compact-list">
               {recentIncidents.map((incident) => {
                 const id = incident.id || incident.timestamp
@@ -522,7 +521,7 @@ function SecuritySection({ loading, errorFor, globalWords, wordSearch, setWordSe
             <div className="admin-search-field"><Icon name="search" size={16} /><input value={patternSearch} onChange={(event) => setPatternSearch(event.target.value)} placeholder="Rechercher un pattern" aria-label="Rechercher les patterns" /></div>
             <SelectDropdown value={patternSort} options={PATTERN_SORT_OPTIONS} onChange={setPatternSort} ariaLabel="Trier les patterns" className="admin-custom-dropdown compact" />
           </AdminToolbar>
-          {loading('patterns') ? <Skeleton rows={5} /> : errorFor('patterns') ? <ErrorState message={errorFor('patterns')} /> : sortedPatterns.length ? (
+          {loading('patterns') ? <QuietLoading /> : errorFor('patterns') ? <ErrorState message={errorFor('patterns')} /> : sortedPatterns.length ? (
             <div className="admin-compact-list">
               {sortedPatterns.map((pattern) => (
                 <div key={pattern.name} className="admin-compact-row interactive pattern-row" data-severity={String(pattern.severity || 'medium').toLowerCase()} role="button" tabIndex="0" onClick={() => setSelectedPattern(pattern)} onKeyDown={(event) => handleRowKey(event, () => setSelectedPattern(pattern))}>
@@ -543,7 +542,7 @@ function SecuritySection({ loading, errorFor, globalWords, wordSearch, setWordSe
         <section className="admin-card">
           <SectionHeading title="Mots bannis globaux" context={`${globalWords.length} résultats`} action={<AddWordForm onSubmit={onAddWord} />} />
           <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={wordSearch} onChange={(event) => setWordSearch(event.target.value)} placeholder="Rechercher un mot" aria-label="Rechercher les mots bannis" /></div></AdminToolbar>
-          {loading('globalWords') ? <Skeleton rows={5} /> : errorFor('globalWords') ? <ErrorState message={errorFor('globalWords')} /> : globalWords.length ? (
+          {loading('globalWords') ? <QuietLoading /> : errorFor('globalWords') ? <ErrorState message={errorFor('globalWords')} /> : globalWords.length ? (
             <div className="admin-compact-list">
               {globalWords.map((item) => {
                 const word = item.word || item
@@ -606,7 +605,7 @@ function ModelsSection({ loading, errorFor, providers, models, allModels, availa
         <section className="admin-card">
           <SectionHeading title="Modèles" context={`${modelRows.length} disponibles`} action={<button type="button" className="admin-button primary" onClick={onCreateModel}><Icon name="plus" size={15} />Ajouter un modèle</button>} />
           <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Rechercher un modèle" aria-label="Rechercher les modèles" /></div></AdminToolbar>
-          {loading('models') || loading('catalog') ? <Skeleton rows={5} /> : errorFor('models') || errorFor('catalog') ? <ErrorState message={errorFor('models') || errorFor('catalog')} /> : modelRows.length ? (
+          {loading('models') || loading('catalog') ? <QuietLoading /> : errorFor('models') || errorFor('catalog') ? <ErrorState message={errorFor('models') || errorFor('catalog')} /> : modelRows.length ? (
             <div className="admin-compact-list model-compact-list">
               {modelRows.map(({ model, adminModel }) => {
                 const alias = adminModel ? (adminModel.aliasInterne || adminModel.alias) : model.alias
@@ -633,7 +632,7 @@ function ModelsSection({ loading, errorFor, providers, models, allModels, availa
         <section className="admin-card">
           <SectionHeading title="Fournisseurs" context={`${providers.length} configurés`} action={<button type="button" className="admin-button primary" onClick={onCreateProvider}><Icon name="plus" size={15} />Ajouter un fournisseur</button>} />
           <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={providerSearch} onChange={(event) => setProviderSearch(event.target.value)} placeholder="Rechercher un fournisseur" aria-label="Rechercher les fournisseurs" /></div></AdminToolbar>
-          {loading('providers') ? <Skeleton rows={4} /> : errorFor('providers') ? <ErrorState message={errorFor('providers')} /> : providers.length ? (
+          {loading('providers') ? <QuietLoading /> : errorFor('providers') ? <ErrorState message={errorFor('providers')} /> : providers.length ? (
             <div className="admin-compact-list">
               {providers.map((provider) => {
                 const name = provider.nom || provider.name || provider.code
@@ -706,7 +705,7 @@ function UsersSection({ loading, errorFor, busyAction, users, allUsers, search, 
     <section className="admin-card">
       <SectionHeading title="Annuaire des utilisateurs" context={`${users.length} résultats`} />
       <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nom ou adresse e-mail" aria-label="Rechercher les utilisateurs" /></div></AdminToolbar>
-      {loading('users') ? <Skeleton rows={6} /> : errorFor('users') ? <ErrorState message={errorFor('users')} /> : users.length ? (
+      {loading('users') ? <QuietLoading /> : errorFor('users') ? <ErrorState message={errorFor('users')} /> : users.length ? (
         <div className="admin-compact-list user-directory">
           {users.map((user) => {
             return (
@@ -781,7 +780,7 @@ export function RolesSection({ loading, errorFor, roles, roleCounts = {}, rolesL
   return (
     <section className="admin-card">
       <SectionHeading title="Rôles Keycloak" context={roles.length ? `${roles.length} rôles` : undefined} />
-      {rolesLoading ? <Skeleton rows={4} /> : rolesError ? <ErrorState message={rolesError} onRetry={onRetryRoles} /> : roles.length ? (
+      {rolesLoading ? <QuietLoading /> : rolesError ? <ErrorState message={rolesError} onRetry={onRetryRoles} /> : roles.length ? (
         <div className="admin-compact-list role-directory">
           {roles.map((item) => {
             const counts = roleCounts[item] || {}
@@ -873,13 +872,13 @@ function AuditSection({ loading, error, view, setView, logs, messages, users, se
             {view === 'permissions' ? (
               <label className="admin-field"><span>Entité</span><SelectDropdown value={entity} options={AUDIT_ENTITY_OPTIONS.map(([value, label]) => ({ value, label }))} onChange={setEntity} ariaLabel="Filtrer par entité" className="admin-custom-dropdown" /></label>
             ) : <label className="admin-field"><span>Utilisateur</span><input value={filteredUserId} onChange={(event) => setFilteredUserId(event.target.value)} placeholder="Identifiant Keycloak" /></label>}
-            <label className="admin-field"><span>Date</span><input type="date" value={currentDate} onChange={(event) => view === 'permissions' ? setDate(event.target.value) : setFilteredDate(event.target.value)} /></label>
+            <label className="admin-field"><span>Date</span><DateFilterInput key={`${view}:${currentDate}`} value={currentDate} onChange={view === 'permissions' ? setDate : setFilteredDate} /></label>
           </FilterPopover>
         </AdminToolbar>
 
         {activeFilterCount > 0 && <div className="active-filter-line"><span>{activeFilterCount} filtre{activeFilterCount !== 1 ? 's' : ''} actif{activeFilterCount !== 1 ? 's' : ''}</span><button type="button" onClick={resetFilters}>Effacer</button></div>}
 
-        {loading ? <Skeleton rows={6} /> : error ? <ErrorState message={error} /> : rows.length ? (
+        {loading ? <QuietLoading /> : error ? <ErrorState message={error} /> : rows.length ? (
           <div className="admin-compact-list audit-list">
             {rows.map((row) => {
               const id = row.id || row.timestamp
@@ -907,6 +906,28 @@ function AuditSection({ loading, error, view, setView, logs, messages, users, se
       </section>
     </div>
   )
+}
+
+function DateFilterInput({ value, onChange }) {
+  const [displayValue, setDisplayValue] = useState(() => formatDateFilterValue(value))
+
+  const handleChange = (event) => {
+    const nextDisplayValue = formatDateFilterDigits(event.target.value)
+    setDisplayValue(nextDisplayValue)
+    if (!nextDisplayValue) onChange('')
+    else {
+      const parsedValue = parseDateFilterValue(nextDisplayValue)
+      if (parsedValue) onChange(parsedValue)
+    }
+  }
+
+  const handleBlur = () => {
+    if (displayValue && !parseDateFilterValue(displayValue)) {
+      setDisplayValue(formatDateFilterValue(value))
+    }
+  }
+
+  return <input type="text" inputMode="numeric" autoComplete="off" placeholder="jj/mm/aaaa" aria-label="Date au format jour mois année" maxLength={10} value={displayValue} onChange={handleChange} onBlur={handleBlur} />
 }
 function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) }
 function dateRange(value) { if (!value) return {}; const [year, month, day] = value.split('-').map(Number); if (!year || !month || !day) return {}; return { from: new Date(year, month - 1, day, 0, 0, 0, 0).toISOString(), to: new Date(year, month - 1, day, 23, 59, 59, 999).toISOString() } }

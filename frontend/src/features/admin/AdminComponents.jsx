@@ -78,8 +78,9 @@ export function AdminTabs({ value, onChange, tabs, label }) {
 }
 
 export function StatCard({ icon, iconPng, label, value, context, onClick }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const Tag = onClick ? 'button' : 'div'
-  return <Tag type={onClick ? 'button' : undefined} className="admin-stat-card" onClick={onClick}><span className="admin-stat-icon">{iconPng ? <img src={iconPng} alt="" /> : <Icon name={icon} size={17} />}</span><span className="admin-stat-copy"><span>{label}</span><strong>{value}</strong><small>{context}</small></span></Tag>
+  return <Tag type={onClick ? 'button' : undefined} className="admin-stat-card" onClick={onClick}><span className="admin-stat-icon">{iconPng && !imageFailed ? <img src={iconPng} alt="" onError={() => setImageFailed(true)} /> : <Icon name={icon} size={17} />}</span><span className="admin-stat-copy"><span>{label}</span><strong>{value}</strong><small>{context}</small></span></Tag>
 }
 
 export function StatusBadge({ status, label, className = '' }) {

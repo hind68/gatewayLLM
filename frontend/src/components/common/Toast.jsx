@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const EXIT_ANIMATION_MS = 220
 const AUTO_CLOSE_MS = 4000
@@ -8,13 +9,15 @@ export default function Toast({ notifications = [], onClose }) {
 
   const visibleNotifications = notifications.slice(0, 3)
 
-  return (
+  const content = (
     <div className="toast-stack" aria-live="polite" aria-relevant="additions removals">
       {visibleNotifications.map((notification) => (
         <ToastItem key={notification.id} notification={notification} onClose={onClose} />
       ))}
     </div>
   )
+
+  return typeof document === 'undefined' ? content : createPortal(content, document.body)
 }
 
 function ToastItem({ notification, onClose }) {

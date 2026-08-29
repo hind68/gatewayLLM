@@ -142,7 +142,10 @@ Open `http://localhost:5173`. Keycloak redirects unauthenticated users to the `s
 
 ## Development users
 
-The imported users all receive the local value of `KEYCLOAK_DEMO_PASSWORD` during provisioning.
+On a fresh realm import, the development users receive the local value of
+`KEYCLOAK_DEMO_PASSWORD`. Later provisioning runs preserve passwords already
+stored in Keycloak, including passwords changed by individual users or an
+administrator.
 
 | Username | Realm roles |
 | --- | --- |

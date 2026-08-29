@@ -18,20 +18,10 @@ function App() {
   const notificationIdRef = useRef(0)
   const lastNotifiedRef = useRef(new Map())
   const [showTabs, setShowTabs] = useState(false)
-  const [showAdminDashboard, setShowAdminDashboardState] = useState(
-    () => isAdmin && window.localStorage.getItem('synapse-active-workspace') === 'admin',
+  const [adminWorkspaceRequested, setAdminWorkspaceRequested] = useState(
+    () => window.localStorage.getItem('synapse-active-workspace') === 'admin',
   )
-
-  useEffect(() => {
-    // On a hard refresh, Keycloak's token is not available yet during the
-    // very first render, so `isAdmin` is briefly false and the lazy
-    // initializer above misses the saved workspace. Re-sync once the token
-    // (and therefore isAdmin) has loaded, so a refresh from the admin
-    // dashboard lands back on the admin dashboard instead of the chat view.
-    if (isAdmin && window.localStorage.getItem('synapse-active-workspace') === 'admin') {
-      setShowAdminDashboardState(true)
-    }
-  }, [isAdmin])
+  const showAdminDashboard = isAdmin && adminWorkspaceRequested
 
   const setShowAdminDashboard = useCallback((nextValue) => {
     const currentValue = showAdminDashboard
@@ -41,7 +31,7 @@ function App() {
 
     const updateView = () => {
       flushSync(() => {
-        setShowAdminDashboardState(resolvedValue)
+        setAdminWorkspaceRequested(resolvedValue)
       })
     }
 
@@ -127,8 +117,11 @@ function App() {
   })
 
   useEffect(() => {
+    // Keycloak's token is unavailable on the first render after a hard
+    // refresh. Preserve the saved admin choice until authentication resolves.
+    if (!token) return
     window.localStorage.setItem('synapse-active-workspace', showAdminDashboard ? 'admin' : 'chat')
-  }, [isAdmin, showAdminDashboard])
+  }, [showAdminDashboard, token])
 
   const conversationProps = {
     ...conversations,

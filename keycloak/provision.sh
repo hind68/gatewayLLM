@@ -4,18 +4,29 @@ set -eu
 SERVER="http://keycloak:8080"
 REALM="${KEYCLOAK_ADMIN_REALM:-synapse}"
 KCADM="/opt/keycloak/bin/kcadm.sh"
+KCADM_CONFIG="/tmp/kcadm-provision.config"
+
+kcadm() {
+  command="$1"
+  shift
+  "$KCADM" "$command" --config "$KCADM_CONFIG" "$@"
+}
 
 echo "Waiting for Keycloak realm ${REALM}..."
-until "$KCADM" config credentials \
-  --server "$SERVER" \
-  --realm master \
-  --user "$KEYCLOAK_ADMIN_USERNAME" \
-  --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
-  && "$KCADM" get "realms/${REALM}" >/dev/null 2>&1; do
+while :; do
+  rm -f "$KCADM_CONFIG"
+  if timeout 15 "$KCADM" config credentials --config "$KCADM_CONFIG" \
+    --server "$SERVER" \
+    --realm master \
+    --user "$KEYCLOAK_ADMIN_USERNAME" \
+    --password "$KEYCLOAK_ADMIN_PASSWORD" >/dev/null 2>&1 \
+    && timeout 15 "$KCADM" get --config "$KCADM_CONFIG" "realms/${REALM}" >/dev/null 2>&1; then
+    break
+  fi
   sleep 2
 done
 
-"$KCADM" update "realms/${REALM}" \
+kcadm update "realms/${REALM}" \
   -s loginTheme=synapse \
   -s internationalizationEnabled=true \
   -s defaultLocale=fr \
@@ -27,8 +38,8 @@ done
 ensure_role() {
   role_name="$1"
   role_description="$2"
-  if ! "$KCADM" get "roles/${role_name}" -r "$REALM" >/dev/null 2>&1; then
-    "$KCADM" create roles -r "$REALM" -s name="$role_name" -s description="$role_description"
+  if ! kcadm get "roles/${role_name}" -r "$REALM" >/dev/null 2>&1; then
+    kcadm create roles -r "$REALM" -s name="$role_name" -s description="$role_description"
   fi
 }
 
@@ -39,9 +50,9 @@ ensure_user_profile() {
   username="$1"
   first_name="$2"
   last_name="$3"
-  user_id="$("$KCADM" get users -r "$REALM" -q username="$username" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
+  user_id="$(kcadm get users -r "$REALM" -q username="$username" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
   if [ -n "$user_id" ]; then
-    "$KCADM" update "users/${user_id}" -r "$REALM" \
+    kcadm update "users/${user_id}" -r "$REALM" \
       -s firstName="$first_name" \
       -s lastName="$last_name" \
       -s emailVerified=true
@@ -51,28 +62,16 @@ ensure_user_profile() {
 ensure_user_profile admin Synapse Admin
 ensure_user_profile user Synapse User
 
-set_demo_password() {
-  username="$1"
-  user_id="$("$KCADM" get users -r "$REALM" -q username="$username" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
-  if [ -n "$user_id" ]; then
-    "$KCADM" set-password -r "$REALM" --userid "$user_id" --new-password "$KEYCLOAK_DEMO_PASSWORD"
-  fi
-}
-
-for demo_user in admin admin1 admin2 extern1 extern2 intern1 intern2 user; do
-  set_demo_password "$demo_user"
-done
-
-synapse_client_id="$("$KCADM" get clients -r "$REALM" -q clientId=synapse-client --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
+synapse_client_id="$(kcadm get clients -r "$REALM" -q clientId=synapse-client --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
 if [ -n "$synapse_client_id" ]; then
-  "$KCADM" update "clients/${synapse_client_id}" -r "$REALM" \
+  kcadm update "clients/${synapse_client_id}" -r "$REALM" \
     -s 'redirectUris=["http://localhost:5173/","http://localhost:5173/*","http://127.0.0.1:5173/","http://127.0.0.1:5173/*"]' \
     -s 'webOrigins=["http://localhost:5173","http://127.0.0.1:5173"]'
 fi
 
-client_id="$("$KCADM" get clients -r "$REALM" -q clientId=gateway-admin --fields id --format csv --noquotes 2>/dev/null | head -n 1 | tr -d '\r')"
+client_id="$(kcadm get clients -r "$REALM" -q clientId=gateway-admin --fields id --format csv --noquotes 2>/dev/null | head -n 1 | tr -d '\r')"
 if [ -z "$client_id" ]; then
-  "$KCADM" create clients -r "$REALM" \
+  kcadm create clients -r "$REALM" \
     -s clientId=gateway-admin \
     -s name="Synapse backend administration" \
     -s enabled=true \
@@ -82,9 +81,9 @@ if [ -z "$client_id" ]; then
     -s directAccessGrantsEnabled=false \
     -s clientAuthenticatorType=client-secret \
     -s secret="$GATEWAY_ADMIN_CLIENT_SECRET"
-  client_id="$("$KCADM" get clients -r "$REALM" -q clientId=gateway-admin --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
+  client_id="$(kcadm get clients -r "$REALM" -q clientId=gateway-admin --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
 else
-  "$KCADM" update "clients/${client_id}" -r "$REALM" \
+  kcadm update "clients/${client_id}" -r "$REALM" \
     -s enabled=true \
     -s publicClient=false \
     -s serviceAccountsEnabled=true \
@@ -95,7 +94,7 @@ else
 fi
 
 for role_name in query-users view-users manage-users view-realm; do
-  "$KCADM" add-roles -r "$REALM" \
+  kcadm add-roles -r "$REALM" \
     --uusername service-account-gateway-admin \
     --cclientid realm-management \
     --rolename "$role_name"
@@ -106,9 +105,9 @@ done
 # these clients, so remove the generated default after both fresh imports and
 # ordinary restarts.
 for logout_client in admin-cli broker gateway-admin; do
-  logout_client_id="$("$KCADM" get clients -r "$REALM" -q clientId="$logout_client" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
+  logout_client_id="$(kcadm get clients -r "$REALM" -q clientId="$logout_client" --fields id --format csv --noquotes | head -n 1 | tr -d '\r')"
   if [ -n "$logout_client_id" ]; then
-    "$KCADM" update "clients/${logout_client_id}" -r "$REALM" \
+    kcadm update "clients/${logout_client_id}" -r "$REALM" \
       -s 'attributes."post.logout.redirect.uris"=null'
   fi
 done
