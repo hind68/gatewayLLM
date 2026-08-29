@@ -166,6 +166,32 @@
   margin: 0 0 16px;
 }
 
+.user-name-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border: var(--admin-field-border);
+  border-radius: 10px;
+  background: var(--admin-neutral-100);
+}
+
+.user-name-toggle button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.user-name-toggle button.active {
+  background: #fff;
+  color: var(--admin-ink);
+  box-shadow: var(--surface-shadow-xs, 0 1px 3px rgba(15, 23, 42, 0.12));
+}
+
 .admin-search-field {
   display: flex;
   align-items: center;
@@ -863,14 +889,25 @@
 
 .audit-permission-meta {
   display: grid;
-  grid-template-columns: 156px max-content max-content;
+  grid-template-columns: 160px 150px 170px;
   align-items: center;
   justify-content: flex-end;
-  column-gap: clamp(42px, 5vw, 82px);
+  column-gap: 20px;
 }
 
 .audit-permission-meta .audit-action-badge {
   justify-self: center;
+}
+
+.audit-permission-meta .audit-actor {
+  width: 100%;
+  justify-self: stretch;
+  text-align: center;
+}
+
+.audit-permission-meta time {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .audit-list time,
@@ -1132,6 +1169,41 @@
 
 .admin-drawer-body {
   padding: 22px 24px 36px;
+}
+
+.protected-account-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.protected-account-icon {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 14px;
+  background: #e8eef8;
+  color: #526b91;
+}
+
+.protected-account-state strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #172033;
+  font-size: 16px;
+}
+
+.protected-account-state p {
+  margin: 0;
+  line-height: 1.55;
 }
 
 .admin-quiet-loading {

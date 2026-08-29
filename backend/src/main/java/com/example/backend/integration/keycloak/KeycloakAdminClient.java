@@ -60,9 +60,21 @@ public class KeycloakAdminClient {
         }
     }
 
-    public void createUser(Map<String, Object> payload) {
-        client.post().uri("/admin/realms/{realm}/users", realm).headers(headers -> headers.setBearerAuth(adminToken())).contentType(MediaType.APPLICATION_JSON)
+    public String createUser(Map<String, Object> payload) {
+        var response = client.post().uri("/admin/realms/{realm}/users", realm).headers(headers -> headers.setBearerAuth(adminToken())).contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(payload).retrieve().toBodilessEntity().block(timeout);
+        java.net.URI location = response == null ? null : response.getHeaders().getLocation();
+        if (location == null || location.getPath() == null) {
+            throw new DlpUnavailableException("Keycloak did not return the created user identifier");
+        }
+        String path = location.getPath();
+        return path.substring(path.lastIndexOf('/') + 1);
+    }
+
+    public void deleteUser(String userId) {
+        client.delete().uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                .headers(headers -> headers.setBearerAuth(adminToken()))
+                .retrieve().toBodilessEntity().block(timeout);
     }
 
     public void setEnabled(String userId, boolean enabled) {

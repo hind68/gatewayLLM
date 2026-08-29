@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react'
-import { getInitials, getRoleLabel } from '../../utils/authUtils'
+import { getInitials, getRoleLabel, getUserAvatarColor } from '../../utils/authUtils'
 import { AuthContext } from '../../AuthProvider'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
@@ -59,6 +59,7 @@ export default function Sidebar({
   const initials = getInitials(displayName)
   const email = keycloak?.tokenParsed?.email || ''
   const roleLabel = getRoleLabel(keycloak?.token)
+  const avatarColor = getUserAvatarColor(keycloak?.tokenParsed?.sub || email || displayName)
 
   // Keep the same sidebar shell mounted and only switch its navigation content.
   // This is what allows the chat navigation to visually transition into admin navigation.
@@ -334,20 +335,20 @@ export default function Sidebar({
             }}
           >
             <span className="user-avatar-wrapper">
-              <span className="user-avatar">{initials}</span>
+              <span className="user-avatar" style={{ backgroundColor: avatarColor }}>{initials}</span>
             </span>
             <span className="user-copy">
               <strong>{displayName}</strong>
             </span>
           </button>
           {isSidebarOpen && isAccountMenuOpen && (
-            <AccountPopover displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} onRequestLogout={() => setShowLogoutConfirmation(true)} />
+            <AccountPopover displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} avatarColor={avatarColor} onRequestLogout={() => setShowLogoutConfirmation(true)} />
           )}
         </div>
       </aside>
 
       {!isSidebarOpen && isAccountMenuOpen && (
-        <AccountPopover className="account-popover-collapsed" displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} onRequestLogout={() => setShowLogoutConfirmation(true)} />
+        <AccountPopover className="account-popover-collapsed" displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} avatarColor={avatarColor} onRequestLogout={() => setShowLogoutConfirmation(true)} />
       )}
 
       {!isSidebarOpen && collapsedPanel && (
@@ -382,11 +383,11 @@ export default function Sidebar({
   )
 }
 
-function AccountPopover({ className = 'account-popover-open', displayName, email, roleLabel, initials, onRequestLogout }) {
+function AccountPopover({ className = 'account-popover-open', displayName, email, roleLabel, initials, avatarColor, onRequestLogout }) {
   return (
     <div className={`account-popover ${className}`} role="menu" data-menu-root>
       <div className="account-popover-profile">
-        <span className="user-avatar" aria-hidden="true">{initials}</span>
+        <span className="user-avatar" style={{ backgroundColor: avatarColor }} aria-hidden="true">{initials}</span>
         <div className="account-popover-identity">
           <strong>{displayName}</strong>
           {email && <small>{email}</small>}

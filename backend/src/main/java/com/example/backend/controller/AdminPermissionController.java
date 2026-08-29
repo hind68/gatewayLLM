@@ -11,6 +11,7 @@ import com.example.backend.repository.GlobalBannedWordRepository;
 import com.example.backend.repository.UserBannedWordRepository;
 import com.example.backend.repository.UserLlmRestrictionRepository;
 import com.example.backend.repository.UtilisateurRepository;
+import com.example.backend.security.AdminTargetPolicy;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -35,6 +36,7 @@ public class AdminPermissionController {
     private final UtilisateurRepository utilisateurRepository;
     private final AuditLogRepository auditLogRepository;
     private final KeycloakAdminClient keycloakAdminClient;
+    private final AdminTargetPolicy targetPolicy;
 
     public AdminPermissionController(
             GlobalBannedWordRepository globalBannedWordRepo,
@@ -42,13 +44,15 @@ public class AdminPermissionController {
             UserBannedWordRepository userBannedWordRepo,
             UtilisateurRepository utilisateurRepository,
             AuditLogRepository auditLogRepository,
-            KeycloakAdminClient keycloakAdminClient) {
+            KeycloakAdminClient keycloakAdminClient,
+            AdminTargetPolicy targetPolicy) {
         this.globalBannedWordRepo = globalBannedWordRepo;
         this.userLlmRestrictionRepo = userLlmRestrictionRepo;
         this.userBannedWordRepo = userBannedWordRepo;
         this.utilisateurRepository = utilisateurRepository;
         this.auditLogRepository = auditLogRepository;
         this.keycloakAdminClient = keycloakAdminClient;
+        this.targetPolicy = targetPolicy;
     }
 
     @GetMapping("/users")
@@ -73,12 +77,11 @@ public class AdminPermissionController {
     @DeleteMapping("/banned-words/global/{id}")
     @Transactional
     public void removeGlobalBannedWord(@PathVariable Long id, JwtAuthenticationToken auth) {
-        if (!globalBannedWordRepo.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Banned word not found");
-        }
+        GlobalBannedWord bannedWord = globalBannedWordRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Banned word not found"));
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
-        globalBannedWordRepo.deleteById(id);
-        auditLogRepository.save(new AuditLog("DELETE", "GlobalBannedWord", String.valueOf(id), adminId));
+        globalBannedWordRepo.delete(bannedWord);
+        auditLogRepository.save(new AuditLog("DELETE", "GlobalBannedWord", bannedWord.getWord(), adminId));
     }
 
     @GetMapping("/llm-restrictions/{userKeycloakId}")
@@ -92,24 +95,25 @@ public class AdminPermissionController {
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         UUID targetUserId = UUID.fromString(payload.get("userId"));
         requireExistingUser(targetUserId);
+        targetPolicy.requireUserSettingsAccess(targetUserId.toString(), auth);
         UserLlmRestriction restriction = new UserLlmRestriction();
         restriction.setUserKeycloakId(targetUserId);
         restriction.setLlmModelAlias(payload.get("llmModelAlias"));
         restriction.setCreatedBy(adminId);
         UserLlmRestriction saved = userLlmRestrictionRepo.save(restriction);
-        auditLogRepository.save(new AuditLog("ADD", "UserLlmRestriction", saved.getLlmModelAlias(), adminId));
+        auditLogRepository.save(new AuditLog("ADD", "UserLlmRestriction", auditTarget(targetUserId, saved.getLlmModelAlias()), adminId));
         return saved;
     }
 
     @DeleteMapping("/llm-restrictions/{id}")
     @Transactional
     public void removeLlmRestriction(@PathVariable Long id, JwtAuthenticationToken auth) {
-        if (!userLlmRestrictionRepo.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Restriction not found");
-        }
+        UserLlmRestriction restriction = userLlmRestrictionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Restriction not found"));
+        targetPolicy.requireUserSettingsAccess(restriction.getUserKeycloakId().toString(), auth);
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         userLlmRestrictionRepo.deleteById(id);
-        auditLogRepository.save(new AuditLog("DELETE", "UserLlmRestriction", String.valueOf(id), adminId));
+        auditLogRepository.save(new AuditLog("DELETE", "UserLlmRestriction", auditTarget(restriction.getUserKeycloakId(), restriction.getLlmModelAlias()), adminId));
     }
 
     @GetMapping("/banned-words/user/{userKeycloakId}")
@@ -122,22 +126,27 @@ public class AdminPermissionController {
     public UserBannedWord addUserBannedWord(@RequestBody Map<String, String> payload, JwtAuthenticationToken auth) {
         UUID targetUserId = UUID.fromString(payload.get("userId"));
         requireExistingUser(targetUserId);
+        targetPolicy.requireUserSettingsAccess(targetUserId.toString(), auth);
         String word = payload.get("word").trim().toLowerCase();
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         UserBannedWord saved = userBannedWordRepo.save(new UserBannedWord(targetUserId, word, adminId));
-        auditLogRepository.save(new AuditLog("ADD", "UserBannedWord", word, adminId));
+        auditLogRepository.save(new AuditLog("ADD", "UserBannedWord", auditTarget(targetUserId, word), adminId));
         return saved;
     }
 
     @DeleteMapping("/banned-words/user/{id}")
     @Transactional
     public void removeUserBannedWord(@PathVariable Long id, JwtAuthenticationToken auth) {
-        if (!userBannedWordRepo.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Banned word not found");
-        }
+        UserBannedWord bannedWord = userBannedWordRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Banned word not found"));
+        targetPolicy.requireUserSettingsAccess(bannedWord.getUserKeycloakId().toString(), auth);
         UUID adminId = UUID.fromString(auth.getToken().getSubject());
         userBannedWordRepo.deleteById(id);
-        auditLogRepository.save(new AuditLog("DELETE", "UserBannedWord", String.valueOf(id), adminId));
+        auditLogRepository.save(new AuditLog("DELETE", "UserBannedWord", auditTarget(bannedWord.getUserKeycloakId(), bannedWord.getWord()), adminId));
+    }
+
+    private String auditTarget(UUID userId, String value) {
+        return userId + " · " + value;
     }
     private void requireExistingUser(UUID userKeycloakId) {
         if (utilisateurRepository.findByExternalId(userKeycloakId.toString()).isEmpty()

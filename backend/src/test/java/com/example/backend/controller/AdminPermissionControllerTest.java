@@ -7,6 +7,7 @@ import com.example.backend.repository.GlobalBannedWordRepository;
 import com.example.backend.repository.UserBannedWordRepository;
 import com.example.backend.repository.UserLlmRestrictionRepository;
 import com.example.backend.repository.UtilisateurRepository;
+import com.example.backend.security.AdminTargetPolicy;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +38,7 @@ class AdminPermissionControllerTest {
     @Mock UtilisateurRepository utilisateurRepository;
     @Mock AuditLogRepository auditLogRepository;
     @Mock KeycloakAdminClient keycloakAdminClient;
+    @Mock AdminTargetPolicy targetPolicy;
 
     private AdminPermissionController controller;
     private JwtAuthenticationToken auth;
@@ -44,7 +46,7 @@ class AdminPermissionControllerTest {
     private void setUp() {
         controller = new AdminPermissionController(
                 globalBannedWordRepo, userLlmRestrictionRepo, userBannedWordRepo, utilisateurRepository, auditLogRepository,
-                keycloakAdminClient);
+                keycloakAdminClient, targetPolicy);
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject(ADMIN_ID.toString()).build();
         auth = new JwtAuthenticationToken(jwt);
     }

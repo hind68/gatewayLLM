@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getRealmRoles, getRoleLabel, hasAdminRole } from './authUtils'
+import { getRealmRoles, getRoleLabel, getUserAvatarColor, hasAdminRole } from './authUtils'
 
 function tokenWithRoles(roles) {
   const encode = (value) => btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -28,5 +28,12 @@ describe('auth utilities', () => {
   it('falls back safely for missing or malformed role data', () => {
     expect(getRealmRoles('not-a-token')).toEqual([])
     expect(getRoleLabel(tokenWithRoles(['USER']))).toBe('Utilisateur')
+  })
+})
+
+describe('getUserAvatarColor', () => {
+  it('returns the same palette color for the same Keycloak identity', () => {
+    expect(getUserAvatarColor('user-id-1')).toBe(getUserAvatarColor('user-id-1'))
+    expect(getUserAvatarColor('user-id-1')).toMatch(/^#[0-9a-f]{6}$/i)
   })
 })

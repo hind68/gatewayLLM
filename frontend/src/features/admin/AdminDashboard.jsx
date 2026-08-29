@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { AuthContext } from '../../AuthProvider'
-import { getInitials, hasSuperAdminRole } from '../../utils/authUtils'
+import { getInitials, getUserAvatarColor, hasSuperAdminRole } from '../../utils/authUtils'
 import {
   addGlobalBannedWord,
   addLlmRestriction,
@@ -10,6 +10,7 @@ import {
   addUserBannedWord,
   createAdminModel,
   createAdminProvider,
+  createKeycloakUser,
   deleteAdminModel,
   deleteAdminProvider,
   fetchAdminModels,
@@ -64,29 +65,27 @@ import {
   StatCard,
   StatusBadge,
 } from './AdminComponents'
-import { formatAction, formatDateFilterDigits, formatDateFilterValue, formatEntity, parseDateFilterValue, restrictionModelOptions } from './AdminUtils'
+import { assignableUserRoles, canManageUserSettings, editablePermissionRoles, formatAction, formatDateFilterDigits, formatDateFilterValue, formatEntity, parseDateFilterValue, restrictionModelOptions, userDirectoryName } from './AdminUtils'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isUuid = (value) => UUID_PATTERN.test(String(value || ''))
 const blankPattern = { name: '', type: 'custom', pattern: '', severity: 'medium', action: 'MASK', enabled: true, validator: '', capture_group: '' }
 const blankProvider = { code: '', name: '', status: 'ACTIF', apiKeyEnvVar: '' }
 const blankModel = { providerId: '', alias: '', providerModel: '', displayName: '', description: '', logoUrl: '', status: 'ACTIF' }
+const blankUser = { username: '', firstName: '', lastName: '', email: '', password: '', role: 'INTERN', temporaryPassword: true }
 const MODEL_LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const MAX_MODEL_LOGO_BYTES = 512 * 1024
 const MANAGED_KEYCLOAK_ROLES = ['SUPER_ADMIN', 'ADMIN', 'INTERN', 'EXTERN']
 const ROLE_LABELS = { SUPER_ADMIN: 'Super administrateur', ADMIN: 'Administrateur', INTERN: 'Interne', EXTERN: 'Externe' }
-const USER_AVATAR_COLORS = ['#3b6ea5', '#3f8f7a', '#6b8f3f', '#c17a3d', '#b25c4a', '#b25c7a', '#7c6bae', '#5b6b85']
 
 function roleLabel(role) {
   return ROLE_LABELS[String(role || '').toUpperCase()] || role || 'Aucun rôle'
 }
 
-function UserAvatar({ user, large = false }) {
-  const label = String(user.nomAffichage || user.username || user.email || '?')
+function UserAvatar({ user, large = false, label: requestedLabel }) {
+  const label = String(requestedLabel || user.nomAffichage || user.username || user.email || '?')
   const colorKey = String(user.externalId || user.id || user.email || label)
-  let hash = 0
-  for (let index = 0; index < colorKey.length; index += 1) hash = ((hash << 5) - hash + colorKey.charCodeAt(index)) | 0
-  const backgroundColor = USER_AVATAR_COLORS[Math.abs(hash) % USER_AVATAR_COLORS.length]
+  const backgroundColor = getUserAvatarColor(colorKey)
   return <span className={`user-mark${large ? ' large' : ''}`} style={{ backgroundColor }} aria-hidden="true">{getInitials(label)}</span>
 }
 
@@ -142,6 +141,7 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   const [users, setUsers] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
   const [userSearch, setUserSearch] = useState('')
+  const [userNameMode, setUserNameMode] = useState(() => window.localStorage.getItem('synapse-user-name-mode') || 'full-name')
   const [selectedKeycloakRoles, setSelectedKeycloakRoles] = useState([])
   const [keycloakRoles, setKeycloakRoles] = useState([])
   const [userRestrictions, setUserRestrictions] = useState([])
@@ -149,6 +149,7 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   const [availableModels, setAvailableModels] = useState([])
   const [userModel, setUserModel] = useState('')
   const [userWord, setUserWord] = useState('')
+  const [userModal, setUserModal] = useState(null)
 
   const [globalWords, setGlobalWords] = useState([])
   const [patterns, setPatterns] = useState([])
@@ -206,6 +207,9 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
     window.localStorage.setItem('synapse-model-test-results', JSON.stringify(modelTestResults))
   }, [modelTestResults])
   useEffect(() => {
+    window.localStorage.setItem('synapse-user-name-mode', userNameMode)
+  }, [userNameMode])
+  useEffect(() => {
     if (!token) return
     void loadInitialData()
     // Initial admin reads intentionally share one lifecycle per token.
@@ -231,23 +235,44 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
       let data
       try {
         const keycloakUsers = await fetchKeycloakUsers(token)
-        data = (keycloakUsers || []).map((user) => ({ id: user.id, externalId: user.id, nomAffichage: user.username || user.email || 'Utilisateur', email: user.email, enabled: user.enabled !== false, roles: user.realmRoles || user.roles || [], keycloakManaged: true }))
+        data = (keycloakUsers || []).map((user) => {
+          const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
+          return { id: user.id, externalId: user.id, username: user.username || '', fullName, nomAffichage: fullName || user.username || user.email || 'Utilisateur', email: user.email, enabled: user.enabled !== false, roles: user.realmRoles || user.roles || [], keycloakManaged: true }
+        })
       } catch {
         data = await fetchUsers(token)
       }
       setUsers(data || [])
-      setSelectedUser((current) => current ? (data || []).find((user) => user.id === current.id) || null : null)
+      setSelectedUser((current) => {
+        if (!current) return null
+        const refreshed = (data || []).find((user) => user.id === current.id)
+        return refreshed ? { ...refreshed, resolvedRoles: current.resolvedRoles } : null
+      })
       setStatus('users', 'success')
     } catch (error) { setStatus('users', 'error', error.message); fail(error) }
   }
   async function selectUser(user) {
+    if (!user) {
+      setSelectedUser(null)
+      setSelectedKeycloakRoles([])
+      setUserRestrictions([])
+      setUserBannedWords([])
+      setStatus('userDetails', 'idle')
+      return
+    }
     setSelectedUser(user)
-    if (user?.keycloakManaged) {
-      try { setSelectedKeycloakRoles(managedKeycloakRoleNames(await fetchKeycloakUserRoles(user.externalId, token))) } catch { setSelectedKeycloakRoles([]) }
-    } else setSelectedKeycloakRoles([])
-    if (!isUuid(user?.externalId)) { setUserRestrictions([]); setUserBannedWords([]); return }
+    setSelectedKeycloakRoles([])
+    setUserRestrictions([])
+    setUserBannedWords([])
     setStatus('userDetails', 'loading')
     try {
+      let resolvedRoles = user?.roles || user?.realmRoles || []
+      if (user?.keycloakManaged) {
+        resolvedRoles = managedKeycloakRoleNames(await fetchKeycloakUserRoles(user.externalId, token))
+        setSelectedKeycloakRoles(resolvedRoles)
+      }
+      setSelectedUser((current) => current?.id === user?.id ? { ...current, resolvedRoles } : current)
+      if (!isUuid(user?.externalId)) { setStatus('userDetails', 'success'); return }
       const [restrictions, words] = await Promise.all([fetchUserRestrictions(user.externalId, token), fetchUserBannedWords(user.externalId, token)])
       setUserRestrictions(restrictions || [])
       setUserBannedWords(words || [])
@@ -352,18 +377,29 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
     setBusyAction('model')
     try { await (data.id ? updateAdminModel(data.id, data, token) : createAdminModel(data, token)); notify(data.id ? 'Modèle mis à jour' : 'Modèle ajouté'); setModelModal(null); await refreshModelViews() } catch (error) { fail(error) } finally { setBusyAction('') }
   }
+  async function saveUserFromModal(data) {
+    if (busyAction) return
+    setBusyAction('create-user')
+    try {
+      await createKeycloakUser(data, token)
+      notify('Utilisateur créé')
+      setUserModal(null)
+      await loadUsers()
+    } catch (error) { fail(error) } finally { setBusyAction('') }
+  }
   function askConfirmation(config) { setConfirmation(config) }
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase()
     if (!query) return users
-    return users.filter((user) => [user.nomAffichage, user.email, user.externalId, user.id].some((value) => String(value || '').toLowerCase().includes(query)))
+    return users.filter((user) => [user.fullName, user.username, user.nomAffichage, user.email, user.externalId, user.id].some((value) => String(value || '').toLowerCase().includes(query)))
   }, [users, userSearch])
   const filteredPatterns = useMemo(() => patterns.filter((item) => `${item.name} ${item.type} ${item.pattern}`.toLowerCase().includes(patternSearch.toLowerCase())), [patterns, patternSearch])
   const filteredWords = useMemo(() => globalWords.filter((item) => String(item.word || item).toLowerCase().includes(wordSearch.toLowerCase())), [globalWords, wordSearch])
   const filteredProviders = useMemo(() => adminProviders.filter((provider) => `${provider.nom || provider.name || ''} ${provider.code || ''}`.toLowerCase().includes(providerSearch.toLowerCase())), [adminProviders, providerSearch])
   const filteredAdminModels = useMemo(() => adminModels.filter((model) => `${model.nomAffichage || ''} ${model.aliasInterne || model.alias || ''} ${model.nomModeleProvider || ''}`.toLowerCase().includes(modelSearch.toLowerCase())), [adminModels, modelSearch])
   const permissionModels = useMemo(() => restrictionModelOptions(adminModels), [adminModels])
+  const editableRoles = useMemo(() => editablePermissionRoles(keycloakRoles, hasSuperAdminRole(token)), [keycloakRoles, token])
   const chartData = useMemo(() => buildOverviewData(overviewMessages), [overviewMessages])
   const activeModels = adminModels.filter((model) => model.statut === 'ACTIF').length
   const activePatterns = patterns.filter((pattern) => pattern.enabled !== false).length
@@ -375,13 +411,14 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
         {activeSection === 'overview' && <OverviewSection loading={loading} errors={errorFor} users={users} activeModels={activeModels} adminModels={adminModels} patterns={patterns} activePatterns={activePatterns} globalWords={globalWords} securityMetrics={securityMetrics} chartData={chartData} overviewMessages={overviewMessages} onSectionChange={setActiveSection} />}
         {activeSection === 'security' && <SecuritySection loading={loading} errorFor={errorFor} globalWords={filteredWords} wordSearch={wordSearch} setWordSearch={setWordSearch} onAddWord={(value) => mutate('global-word', () => addGlobalBannedWord(value, token), 'Mot banni ajouté', loadGlobalWords)} onDeleteWord={(id, word) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: `« ${word} » sera supprimé des règles globales.`, onConfirm: () => mutate('delete-word', () => removeGlobalBannedWord(id, token), 'Mot banni supprimé', loadGlobalWords) })} patterns={filteredPatterns} patternSearch={patternSearch} setPatternSearch={setPatternSearch} onCreatePattern={() => setPatternModal({ ...blankPattern, mode: 'create' })} onEditPattern={(pattern) => setPatternModal({ ...blankPattern, ...pattern, mode: 'edit' })} onTogglePattern={(pattern) => mutate(`pattern-${pattern.name}`, () => updatePattern(pattern.name, { ...pattern, enabled: pattern.enabled === false }, token), pattern.enabled === false ? 'Pattern activé' : 'Pattern désactivé', loadPatterns)} onDeletePattern={(name) => askConfirmation({ title: 'Supprimer ce pattern ?', message: 'Cette règle DLP sera supprimée définitivement.', onConfirm: () => mutate('delete-pattern', () => removePattern(name, token), 'Pattern supprimé', loadPatterns) })} onCopyExpression={() => notify('Expression copiée')} onCopyError={fail} />}
         {activeSection === 'models' && <ModelsSection loading={loading} errorFor={errorFor} providers={filteredProviders} allProviders={adminProviders} models={filteredAdminModels} allModels={adminModels} availableModels={availableModels} providerSearch={providerSearch} setProviderSearch={setProviderSearch} modelSearch={modelSearch} setModelSearch={setModelSearch} onCreateProvider={() => setProviderModal({ ...blankProvider, mode: 'create' })} onEditProvider={(provider) => setProviderModal({ code: provider.code || '', name: provider.nom || provider.name || '', status: provider.statut || 'ACTIF', apiKeyEnvVar: provider.apiKeyEnvVar || '', id: provider.id, mode: 'edit' })} onToggleProvider={(provider) => mutate(`provider-status-${provider.id}`, () => updateAdminProvider(provider.id, { status: provider.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF' }, token), provider.statut === 'ACTIF' ? 'Fournisseur désactivé' : 'Fournisseur activé', async () => { await loadAdminProviders(); await refreshModelViews() })} onDeleteProvider={(provider) => askConfirmation({ title: 'Supprimer ce fournisseur ?', message: 'La suppression est refusée si des modèles y sont encore associés.', onConfirm: () => mutate('delete-provider', () => deleteAdminProvider(provider.id, token), 'Fournisseur supprimé', loadAdminProviders) })} onCreateModel={() => setModelModal({ ...blankModel, mode: 'create' })} onEditModel={(model) => setModelModal({ providerId: String(model.providerId || ''), alias: model.aliasInterne || model.alias || '', providerModel: model.nomModeleProvider || '', displayName: model.nomAffichage || '', description: model.description || '', logoUrl: model.logoUrl || '', status: model.statut || 'ACTIF', id: model.id, mode: 'edit' })} onToggleModel={(model) => mutate(`model-status-${model.id}`, () => setAdminModelStatus(model.id, model.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF', token), model.statut === 'ACTIF' ? 'Modèle désactivé' : 'Modèle activé', async () => { await refreshModelViews(); await loadSecurityData() })} onDeleteModel={(model) => askConfirmation({ title: 'Supprimer ce modèle ?', message: 'La suppression est refusée si des conversations ou restrictions le référencent.', onConfirm: () => mutate('delete-model', () => deleteAdminModel(model.id, token), 'Modèle supprimé', refreshModelViews) })} onTestModel={testModel} modelTestResults={modelTestResults} busyAction={busyAction} />}
-        {activeSection === 'users' && <UsersSection loading={loading} errorFor={errorFor} busyAction={busyAction} users={filteredUsers} allUsers={users} search={userSearch} setSearch={setUserSearch} selectedUser={selectedUser} onSelectUser={selectUser} keycloakRoles={keycloakRoles} keycloakRolesError={errorFor('keycloakRoles')} onRetryKeycloakRoles={loadKeycloakRoles} selectedRoles={selectedKeycloakRoles} setSelectedRoles={setSelectedKeycloakRoles} onSaveRoles={() => mutate('user-roles', () => setKeycloakUserRoles(selectedUser.externalId, selectedKeycloakRoles, token), 'Rôles mis à jour')} restrictions={userRestrictions} bannedWords={userBannedWords} models={permissionModels} selectedModel={userModel} setSelectedModel={setUserModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={() => mutate('user-restriction', () => addLlmRestriction(selectedUser.externalId, userModel, token), 'Restriction ajoutée', () => selectUser(selectedUser))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer cette restriction ?', message: `La restriction « ${item.llmModelAlias} » sera supprimée.`, onConfirm: () => mutate('delete-user-restriction', () => removeLlmRestriction(item.id, token), 'Restriction supprimée', () => selectUser(selectedUser)) })} onAddWord={() => mutate('user-word', () => addUserBannedWord(selectedUser.externalId, userWord, token), 'Mot banni ajouté', () => { setUserWord(''); return selectUser(selectedUser) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot ?', message: `« ${item.word} » sera supprimé pour cet utilisateur.`, onConfirm: () => mutate('delete-user-word', () => removeUserBannedWord(item.id, token), 'Mot banni supprimé', () => selectUser(selectedUser)) })} onToggleUser={(user) => mutate('user-status', () => setKeycloakUserEnabled(user.externalId, !user.enabled, token), user.enabled ? 'Utilisateur désactivé' : 'Utilisateur activé', loadUsers)} />}
-        {activeSection === 'roles' && <RolesSection loading={loading('roles')} errorFor={errorFor} roles={keycloakRoles.map((item) => item.name).filter(Boolean)} roleCounts={roleCounts} rolesLoading={loading('keycloakRoles')} rolesError={errorFor('keycloakRoles')} onRetryRoles={() => selectedRole ? loadRoleData(selectedRole) : loadKeycloakRoles()} role={selectedRole} setRole={setSelectedRole} restrictions={roleRestrictions} bannedWords={roleBannedWords} models={permissionModels} selectedModel={roleModel} setSelectedModel={setRoleModel} word={roleWord} setWord={setRoleWord} onAddRestriction={() => mutate('role-restriction', () => addRoleLlmRestriction(selectedRole, roleModel, token), 'Restriction ajoutée', () => loadRoleData(selectedRole))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer la restriction ?', message: 'La restriction sera supprimée pour ce rôle.', onConfirm: () => mutate('delete-role-restriction', () => removeRoleLlmRestriction(item.id, token), 'Restriction supprimée', () => loadRoleData(selectedRole)) })} onAddWord={() => mutate('role-word', () => addRoleBannedWord(selectedRole, roleWord, token), 'Mot banni ajouté', () => { setRoleWord(''); return loadRoleData(selectedRole) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: 'Ce mot sera supprimé pour le rôle sélectionné.', onConfirm: () => mutate('delete-role-word', () => removeRoleBannedWord(item.id, token), 'Mot banni supprimé', () => loadRoleData(selectedRole)) })} />}
+        {activeSection === 'users' && <UsersSection loading={loading} errorFor={errorFor} busyAction={busyAction} users={filteredUsers} allUsers={users} search={userSearch} setSearch={setUserSearch} nameMode={userNameMode} setNameMode={setUserNameMode} onCreateUser={() => setUserModal({ ...blankUser })} selectedUser={selectedUser} onSelectUser={selectUser} keycloakRoles={keycloakRoles} keycloakRolesError={errorFor('keycloakRoles')} onRetryKeycloakRoles={loadKeycloakRoles} selectedRoles={selectedKeycloakRoles} setSelectedRoles={setSelectedKeycloakRoles} onSaveRoles={() => mutate('user-roles', () => setKeycloakUserRoles(selectedUser.externalId, selectedKeycloakRoles, token), 'Rôles mis à jour')} restrictions={userRestrictions} bannedWords={userBannedWords} models={permissionModels} selectedModel={userModel} setSelectedModel={setUserModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={() => mutate('user-restriction', () => addLlmRestriction(selectedUser.externalId, userModel, token), 'Restriction ajoutée', () => selectUser(selectedUser))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer cette restriction ?', message: `La restriction « ${item.llmModelAlias} » sera supprimée.`, onConfirm: () => mutate('delete-user-restriction', () => removeLlmRestriction(item.id, token), 'Restriction supprimée', () => selectUser(selectedUser)) })} onAddWord={() => mutate('user-word', () => addUserBannedWord(selectedUser.externalId, userWord, token), 'Mot banni ajouté', () => { setUserWord(''); return selectUser(selectedUser) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot ?', message: `« ${item.word} » sera supprimé pour cet utilisateur.`, onConfirm: () => mutate('delete-user-word', () => removeUserBannedWord(item.id, token), 'Mot banni supprimé', () => selectUser(selectedUser)) })} onToggleUser={(user) => mutate('user-status', () => setKeycloakUserEnabled(user.externalId, !user.enabled, token), user.enabled ? 'Utilisateur désactivé' : 'Utilisateur activé', loadUsers)} />}
+        {activeSection === 'roles' && <RolesSection loading={loading('roles')} errorFor={errorFor} roles={editableRoles.map((item) => item.name).filter(Boolean)} roleCounts={roleCounts} rolesLoading={loading('keycloakRoles')} rolesError={errorFor('keycloakRoles')} onRetryRoles={() => selectedRole ? loadRoleData(selectedRole) : loadKeycloakRoles()} role={editableRoles.some((item) => item.name === selectedRole) ? selectedRole : ''} setRole={setSelectedRole} restrictions={roleRestrictions} bannedWords={roleBannedWords} models={permissionModels} selectedModel={roleModel} setSelectedModel={setRoleModel} word={roleWord} setWord={setRoleWord} onAddRestriction={() => mutate('role-restriction', () => addRoleLlmRestriction(selectedRole, roleModel, token), 'Restriction ajoutée', () => loadRoleData(selectedRole))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer la restriction ?', message: 'La restriction sera supprimée pour ce rôle.', onConfirm: () => mutate('delete-role-restriction', () => removeRoleLlmRestriction(item.id, token), 'Restriction supprimée', () => loadRoleData(selectedRole)) })} onAddWord={() => mutate('role-word', () => addRoleBannedWord(selectedRole, roleWord, token), 'Mot banni ajouté', () => { setRoleWord(''); return loadRoleData(selectedRole) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: 'Ce mot sera supprimé pour le rôle sélectionné.', onConfirm: () => mutate('delete-role-word', () => removeRoleBannedWord(item.id, token), 'Mot banni supprimé', () => loadRoleData(selectedRole)) })} />}
         {activeSection === 'audit' && <AuditSection loading={loading('audit')} error={errorFor('audit')} view={auditView} setView={(view) => { setAuditView(view); setExpandedAuditId(null) }} logs={auditLogs} messages={filteredMessages} users={users} search={auditSearch} setSearch={(value) => { setAuditSearch(value); setAuditPage(0) }} action={auditAction} setAction={(value) => { setAuditAction(value); setAuditPage(0) }} entity={auditEntity} setEntity={(value) => { setAuditEntity(value); setAuditPage(0) }} date={auditDate} setDate={(value) => { setAuditDate(value); setAuditPage(0) }} filteredSearch={filteredSearch} setFilteredSearch={(value) => { setFilteredSearch(value); setFilteredPage(0) }} filteredAction={filteredAction} setFilteredAction={(value) => { setFilteredAction(value); setFilteredPage(0) }} filteredUserId={filteredUserId} setFilteredUserId={(value) => { setFilteredUserId(value); setFilteredPage(0) }} filteredDate={filteredDate} setFilteredDate={(value) => { setFilteredDate(value); setFilteredPage(0) }} expandedId={expandedAuditId} setExpandedId={setExpandedAuditId} page={auditView === 'permissions' ? auditPage : filteredPage} totalPages={auditView === 'permissions' ? auditTotalPages : filteredTotalPages} onPageChange={auditView === 'permissions' ? setAuditPage : setFilteredPage} />}
       </div>
       {patternModal && <PatternModal data={patternModal} busy={busyAction === 'pattern'} onClose={() => setPatternModal(null)} onSave={(data) => mutate('pattern', () => data.mode === 'edit' ? updatePattern(data.name, data, token) : addPattern(data, token), data.mode === 'edit' ? 'Pattern mis à jour' : 'Pattern ajouté', async () => { setPatternModal(null); await loadPatterns() })} />}
       {providerModal && <ProviderModal data={providerModal} busy={busyAction === 'provider'} onClose={() => setProviderModal(null)} onSave={saveProviderFromModal} />}
       {modelModal && <ModelModal data={modelModal} providers={adminProviders} busy={busyAction === 'model'} onClose={() => setModelModal(null)} onSave={saveModelFromModal} />}
+      {userModal && <UserModal data={userModal} roles={editableRoles} busy={busyAction === 'create-user'} onClose={() => setUserModal(null)} onSave={saveUserFromModal} />}
       {confirmation && <ConfirmDialog {...confirmation} onCancel={() => setConfirmation(null)} onConfirm={async () => { setConfirmation(null); await confirmation.onConfirm() }} />}
     </AdminShell>
   )
@@ -702,18 +739,20 @@ function ModelDetailDrawer({ selection, result, testing, onClose, onEdit, onTest
   )
 }
 
-function UsersSection({ loading, errorFor, busyAction, users, allUsers, search, setSearch, selectedUser, onSelectUser, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+function UsersSection({ loading, errorFor, busyAction, users, allUsers, search, setSearch, nameMode, setNameMode, onCreateUser, selectedUser, onSelectUser, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+  const actorIsSuperAdmin = hasSuperAdminRole(useContext(AuthContext)?.token)
   return (
     <section className="admin-card">
-      <SectionHeading title="Annuaire des utilisateurs" context={`${users.length} résultats`} />
-      <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nom ou adresse e-mail" aria-label="Rechercher les utilisateurs" /></div></AdminToolbar>
+      <SectionHeading title="Annuaire des utilisateurs" context={`${users.length} résultats`} action={actorIsSuperAdmin ? <button type="button" className="admin-button primary" onClick={onCreateUser}><Icon name="plus" size={15} />Nouvel utilisateur</button> : null} />
+      <AdminToolbar><div className="admin-search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nom, identifiant ou adresse e-mail" aria-label="Rechercher les utilisateurs" /></div><div className="user-name-toggle" role="group" aria-label="Affichage des utilisateurs"><button type="button" aria-pressed={nameMode === 'full-name'} className={nameMode === 'full-name' ? 'active' : ''} onClick={() => setNameMode('full-name')}>Noms complets</button><button type="button" aria-pressed={nameMode === 'username'} className={nameMode === 'username' ? 'active' : ''} onClick={() => setNameMode('username')}>Identifiants</button></div></AdminToolbar>
       {loading('users') ? <QuietLoading /> : errorFor('users') ? <ErrorState message={errorFor('users')} /> : users.length ? (
         <div className="admin-compact-list user-directory">
           {users.map((user) => {
+            const displayName = userDirectoryName(user, nameMode)
             return (
               <div key={user.id} className="admin-compact-row interactive user-directory-row" role="button" tabIndex="0" onClick={() => onSelectUser(user)} onKeyDown={(event) => handleRowKey(event, () => onSelectUser(user))}>
-                <UserAvatar user={user} />
-                <span className="row-main"><strong>{user.nomAffichage || 'Utilisateur'}</strong><small>{user.email || 'Compte Synapse'}</small></span>
+                <UserAvatar user={user} label={displayName} />
+                <span className="row-main"><strong>{displayName}</strong><small>{user.email || 'Compte Synapse'}</small></span>
                 <StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} />
                 <Icon name="chevron" size={16} />
               </div>
@@ -721,51 +760,64 @@ function UsersSection({ loading, errorFor, busyAction, users, allUsers, search, 
           })}
         </div>
       ) : <EmptyState icon="users" title="Aucun utilisateur" description={allUsers.length ? 'Aucun résultat pour cette recherche.' : 'Les comptes apparaîtront ici lorsqu’ils seront disponibles.'} />}
-      <UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} busyAction={busyAction} user={selectedUser} onClose={() => onSelectUser(null)} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} />
+      <UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} busyAction={busyAction} user={selectedUser} nameMode={nameMode} onClose={() => onSelectUser(null)} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} />
     </section>
   )
 }
 
-function UserDetails({ loading, error, busyAction, user, onClose, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
-  const canManageAccounts = hasSuperAdminRole(useContext(AuthContext)?.token)
+function UserDetails({ loading, error, busyAction, user, nameMode, onClose, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+  const actorIsSuperAdmin = hasSuperAdminRole(useContext(AuthContext)?.token)
   if (!user) return null
+  const targetRoles = user.resolvedRoles || user.roles || user.realmRoles || []
+  const normalizedTargetRoles = new Set(targetRoles.map((role) => String(role).toUpperCase()))
+  const canManageSettings = canManageUserSettings(actorIsSuperAdmin, targetRoles)
+  const canManageAccount = canManageSettings
+  const assignableRoles = assignableUserRoles(keycloakRoles)
   const canManage = isUuid(user.externalId)
   const addingRestriction = busyAction === 'user-restriction'
   const addingWord = busyAction === 'user-word'
   const mainRole = roleLabel(selectedRoles[0] || user.roles?.[0] || user.realmRoles?.[0])
+  const displayName = userDirectoryName(user, nameMode)
 
   return (
     <DetailDrawer
-      title={user.nomAffichage || 'Utilisateur'}
+      title={displayName}
       onClose={onClose}
-      header={<div className="admin-drawer-profile"><UserAvatar user={user} large /><div><h2>{user.nomAffichage || 'Utilisateur'}</h2><p>{user.email || 'Compte Synapse'}</p><div><StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} /><span>{mainRole}</span></div></div></div>}
+      header={<div className="admin-drawer-profile"><UserAvatar user={user} label={displayName} large /><div><h2>{displayName}</h2><p>{user.email || 'Compte Synapse'}</p><div><StatusBadge status={user.enabled !== false ? 'active' : 'inactive'} label={user.enabled !== false ? 'Actif' : 'Inactif'} /><span>{mainRole}</span></div></div></div>}
     >
       <div className="drawer-action-row drawer-action-row-end">
-        {user.keycloakManaged && <button type="button" className="admin-button secondary" disabled={!canManageAccounts} title={!canManageAccounts ? 'Réservé aux super administrateurs.' : undefined} onClick={() => onToggleUser(user)}>{user.enabled !== false ? 'Désactiver le compte' : 'Activer le compte'}</button>}
+        {!loading && user.keycloakManaged && canManageAccount && <button type="button" className="admin-button secondary" onClick={() => onToggleUser(user)}>{user.enabled !== false ? 'Désactiver le compte' : 'Activer le compte'}</button>}
       </div>
-      {loading ? <QuietLoading /> : error ? <ErrorState message={error} /> : (
+      {loading ? <QuietLoading /> : error ? <ErrorState message={error} /> : !canManageSettings ? (
+        <div className="protected-account-state" role="status">
+          <span className="protected-account-icon"><Icon name="shieldCheck" size={24} /></span>
+          <div>
+            <strong>Compte protégé</strong>
+            <p>{normalizedTargetRoles.has('SUPER_ADMIN') ? 'Les paramètres d’un super administrateur ne peuvent être modifiés par aucun compte.' : 'Seul un super administrateur peut modifier les paramètres d’un autre administrateur.'}</p>
+          </div>
+        </div>
+      ) : (
         <div className="admin-collapsible-list">
-          <CollapsibleSection title="Compte et rôles" summary={selectedRoles.length ? `${selectedRoles.length} rôle attribué` : 'Aucun rôle attribué'} count={selectedRoles.length} defaultOpen>
+          {canManageAccount && <CollapsibleSection title="Compte et rôles" summary={selectedRoles.length ? `${selectedRoles.length} rôle attribué` : 'Aucun rôle attribué'} count={selectedRoles.length} defaultOpen>
             <div className="role-chip-grid">
-              {keycloakRoles.length ? keycloakRoles.map((role) => {
+              {assignableRoles.length ? assignableRoles.map((role) => {
                 const checked = selectedRoles.includes(role.name)
-                return <label key={role.id || role.name} className={`role-check ${checked ? 'selected' : ''}`}><input type="radio" name="managed-user-role" checked={checked} disabled={!canManageAccounts} onChange={() => setSelectedRoles([role.name])} /><span>{roleLabel(role.name)}</span></label>
+                return <label key={role.id || role.name} className={`role-check ${checked ? 'selected' : ''}`}><input type="radio" name="managed-user-role" checked={checked} onChange={() => setSelectedRoles([role.name])} /><span>{roleLabel(role.name)}</span></label>
               }) : keycloakRolesError ? <div className="role-sync-warning"><span>{keycloakRolesError}</span><button type="button" className="admin-button secondary" onClick={onRetryKeycloakRoles}>Réessayer</button></div> : <span className="muted">Aucun rôle n’est disponible dans Keycloak.</span>}
             </div>
-            {keycloakRoles.length > 0 && <button type="button" className="admin-button primary" onClick={onSaveRoles} disabled={!canManageAccounts || !user.keycloakManaged || selectedRoles.length !== 1}>Enregistrer le rôle</button>}
-            {!canManageAccounts && <p className="helper-text">La gestion des comptes et des rôles est réservée aux super administrateurs.</p>}
-          </CollapsibleSection>
+            {assignableRoles.length > 0 && <button type="button" className="admin-button primary" onClick={onSaveRoles} disabled={!user.keycloakManaged || selectedRoles.length !== 1}>Enregistrer le rôle</button>}
+          </CollapsibleSection>}
 
-          <CollapsibleSection title="Modèles restreints" summary={`${restrictions.length} modèle${restrictions.length !== 1 ? 's' : ''} restreint${restrictions.length !== 1 ? 's' : ''}`} count={restrictions.length}>
+          {canManageSettings && <CollapsibleSection title="Modèles restreints" summary={`${restrictions.length} modèle${restrictions.length !== 1 ? 's' : ''} restreint${restrictions.length !== 1 ? 's' : ''}`} count={restrictions.length}>
             <div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} disabled={!canManage} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!canManage || !selectedModel || addingRestriction} title={!canManage ? 'Un UUID Keycloak est requis.' : undefined} onClick={onAddRestriction}>{addingRestriction ? 'Ajout…' : 'Ajouter'}</button></div>
             {!canManage && <p className="helper-text">Les restrictions personnalisées nécessitent l’identifiant Keycloak du compte.</p>}
             <ChipList items={restrictions} empty="Aucune restriction personnalisée." labelKey="llmModelAlias" onRemove={onRemoveRestriction} />
-          </CollapsibleSection>
+          </CollapsibleSection>}
 
-          <CollapsibleSection title="Mots bannis personnels" summary={`${bannedWords.length} mot${bannedWords.length !== 1 ? 's' : ''}`} count={bannedWords.length}>
+          {canManageSettings && <CollapsibleSection title="Mots bannis personnels" summary={`${bannedWords.length} mot${bannedWords.length !== 1 ? 's' : ''}`} count={bannedWords.length}>
             <div className="inline-add-form"><input value={userWord} onChange={(event) => setUserWord(event.target.value)} placeholder="Ajouter un mot ou une expression" disabled={!canManage} aria-label="Nouveau mot banni utilisateur" /><button type="button" className="admin-button secondary" disabled={!canManage || !userWord.trim() || addingWord} onClick={onAddWord}>{addingWord ? 'Ajout…' : 'Ajouter'}</button></div>
             <ChipList items={bannedWords} empty="Aucun mot banni spécifique." labelKey="word" onRemove={onRemoveWord} />
-          </CollapsibleSection>
+          </CollapsibleSection>}
         </div>
       )}
     </DetailDrawer>
@@ -858,6 +910,15 @@ function AuditSection({ loading, error, view, setView, logs, messages, users, se
     return id && name ? [[String(id), name]] : []
   })), [users])
   const resolveUserName = (id, fallback) => id ? (userNamesById.get(String(id)) || fallback) : fallback
+  const resolveAuditTarget = (row) => {
+    const raw = String(row.entityId || '')
+    if (row.entityName === 'KEYCLOAK_USER') return resolveUserName(raw, 'Utilisateur inconnu')
+    if (row.entityName === 'UserBannedWord' || row.entityName === 'USER_BANNED_WORD' || row.entityName === 'UserLlmRestriction' || row.entityName === 'USER_LLM_RESTRICTION') {
+      const [userId, ...details] = raw.split(' · ')
+      if (details.length) return `${resolveUserName(userId, 'Utilisateur inconnu')} · ${details.join(' · ')}`
+    }
+    return raw || '—'
+  }
   const resetFilters = () => {
     if (view === 'permissions') { setAction(''); setEntity(''); setDate('') }
     else { setFilteredAction(''); setFilteredUserId(''); setFilteredDate('') }
@@ -889,10 +950,9 @@ function AuditSection({ loading, error, view, setView, logs, messages, users, se
               const logId = row.id || '—'
               const expanded = expandedId === id
               const isMessage = view === 'filtered'
-              const isUserTarget = !isMessage && row.entityName === 'KEYCLOAK_USER'
               const userId = isMessage ? row.userKeycloakId : row.performedBy
               const userName = resolveUserName(userId, isMessage || userId ? 'Utilisateur inconnu' : 'Système')
-              const resourceDetail = isMessage ? (row.detectedTypes || 'Catégorie non précisée') : isUserTarget ? resolveUserName(row.entityId, 'Utilisateur inconnu') : (row.entityId || '—')
+              const resourceDetail = isMessage ? (row.detectedTypes || 'Catégorie non précisée') : resolveAuditTarget(row)
               const status = isMessage ? row.requestStatus || row.action : row.action
               return (
                 <div key={id} className={`audit-item ${expanded ? 'expanded' : ''}`}>
@@ -984,6 +1044,38 @@ function ModelModal({ data, providers, busy, onClose, onSave }) {
           <div className="model-logo-picker"><div className="model-logo-preview"><ModelLogo alias={form.alias} logoUrl={selectedLogo} fallback={modelCardMeta(form.alias || 'model').initials} /></div><div className="model-logo-control">{logoMode === 'url' ? <input className="model-logo-url-input" type="url" value={urlLogo} onChange={(event) => { setUrlLogo(event.target.value); setLogoError('') }} placeholder="https://…" aria-label="URL du logo" /> : <label className="admin-button secondary model-logo-file-button">{localLogo ? 'Changer le logo local' : 'Choisir un logo local'}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={selectLogoFile} /></label>}{selectedLogo && <button type="button" className="admin-text-button" onClick={() => { if (logoMode === 'local') setLocalLogo(''); else setUrlLogo(''); setLogoError('') }}>Retirer</button>}<small className="admin-field-help">{logoMode === 'local' ? 'PNG, JPEG, WebP ou GIF · 512 Ko maximum.' : 'URL HTTPS publique vers l’image du modèle.'}</small>{logoError && <small className="admin-field-error" role="alert">{logoError}</small>}</div></div>
         </div>
         <div className="admin-modal-actions"><button type="button" className="admin-button secondary" onClick={onClose}>Annuler</button><button type="submit" className="admin-button primary" disabled={busy || Boolean(logoError) || !form.providerId}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+      </form>
+    </Modal>
+  )
+}
+function UserModal({ data, roles, busy, onClose, onSave }) {
+  const roleOptions = roles.map((role) => ({ value: role.name, label: roleLabel(role.name) }))
+  const initialRole = roleOptions.some((option) => option.value === data.role) ? data.role : (roleOptions[0]?.value || '')
+  const [form, setForm] = useState({ ...data, role: initialRole })
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+
+  return (
+    <Modal title="Créer un utilisateur" description="Le compte sera créé dans Keycloak avec le rôle sélectionné." onClose={onClose}>
+      <form className="admin-modal-form" onSubmit={(event) => {
+        event.preventDefault()
+        onSave({
+          ...form,
+          username: form.username.trim(),
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          email: form.email.trim(),
+        })
+      }}>
+        <div className="form-grid">
+          <Field label="Prénom"><input value={form.firstName} onChange={(event) => update('firstName', event.target.value)} autoComplete="given-name" /></Field>
+          <Field label="Nom"><input value={form.lastName} onChange={(event) => update('lastName', event.target.value)} autoComplete="family-name" /></Field>
+        </div>
+        <Field label="Nom d’utilisateur"><input value={form.username} onChange={(event) => update('username', event.target.value)} autoComplete="username" required /></Field>
+        <Field label="Adresse e-mail"><input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} autoComplete="email" required /></Field>
+        <Field label="Mot de passe"><input type="password" value={form.password} onChange={(event) => update('password', event.target.value)} autoComplete="new-password" minLength="8" required /></Field>
+        <DropdownField label="Rôle" value={form.role} options={roleOptions} onChange={(value) => update('role', value)} disabled={!roleOptions.length} />
+        <label className="checkbox-line"><input type="checkbox" checked={form.temporaryPassword} onChange={(event) => update('temporaryPassword', event.target.checked)} /> Demander un nouveau mot de passe à la première connexion</label>
+        <div className="admin-modal-actions"><button type="button" className="admin-button secondary" onClick={onClose}>Annuler</button><button type="submit" className="admin-button primary" disabled={busy || !form.role}>{busy ? 'Création…' : 'Créer l’utilisateur'}</button></div>
       </form>
     </Modal>
   )

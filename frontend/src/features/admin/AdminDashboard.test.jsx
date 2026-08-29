@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { RolesSection } from './AdminDashboard'
-import { formatDateFilterDigits, formatDateFilterValue, parseDateFilterValue, restrictionModelOptions } from './AdminUtils'
+import { assignableUserRoles, canManageUserSettings, editablePermissionRoles, formatDateFilterDigits, formatDateFilterValue, formatEntity, parseDateFilterValue, restrictionModelOptions, userDirectoryName } from './AdminUtils'
 
 const baseProps = {
   errorFor: () => '',
@@ -31,6 +31,53 @@ describe('restrictionModelOptions', () => {
       { aliasInterne: 'secure-claude', nomAffichage: 'Claude', statut: 'INACTIF', providerStatus: 'ACTIF' },
       { aliasInterne: 'secure-old', nomAffichage: 'Old', statut: 'ACTIF', providerStatus: 'INACTIF' },
     ])).toEqual([{ alias: 'secure-gpt', displayName: 'OpenAI GPT-4o mini' }])
+  })
+})
+
+describe('audit entity labels', () => {
+  it('formats every managed permission entity consistently', () => {
+    expect(formatEntity('ROLE_LLM_RESTRICTION')).toBe('Restriction de modèle par rôle')
+    expect(formatEntity('ROLE_BANNED_WORD')).toBe('Mot banni par rôle')
+    expect(formatEntity('UserBannedWord')).toBe('Mot banni utilisateur')
+    expect(formatEntity('KEYCLOAK_USER')).toBe('Compte utilisateur')
+  })
+})
+
+describe('admin target permissions', () => {
+  it('never allows super administrator settings to be changed', () => {
+    expect(canManageUserSettings(true, ['SUPER_ADMIN'])).toBe(false)
+    expect(canManageUserSettings(false, ['SUPER_ADMIN'])).toBe(false)
+  })
+
+  it('only allows a super administrator to change administrator settings', () => {
+    expect(canManageUserSettings(false, ['ADMIN'])).toBe(false)
+    expect(canManageUserSettings(true, ['ADMIN'])).toBe(true)
+    expect(canManageUserSettings(false, ['INTERN'])).toBe(true)
+  })
+
+  it('hides protected roles from administrators', () => {
+    const roles = [{ name: 'SUPER_ADMIN' }, { name: 'ADMIN' }, { name: 'INTERN' }]
+    expect(editablePermissionRoles(roles, false).map((role) => role.name)).toEqual(['INTERN'])
+    expect(editablePermissionRoles(roles, true).map((role) => role.name)).toEqual(['ADMIN', 'INTERN'])
+  })
+
+  it('lets an administrator assign admin but never super admin', () => {
+    const roles = [{ name: 'SUPER_ADMIN' }, { name: 'ADMIN' }, { name: 'INTERN' }, { name: 'EXTERN' }]
+    expect(assignableUserRoles(roles).map((role) => role.name)).toEqual(['ADMIN', 'INTERN', 'EXTERN'])
+  })
+})
+
+describe('user directory names', () => {
+  const user = { fullName: 'Hamza Fatih', username: 'hfatih', email: 'hamza@example.com' }
+
+  it('shows full names by default and usernames on request', () => {
+    expect(userDirectoryName(user)).toBe('Hamza Fatih')
+    expect(userDirectoryName(user, 'username')).toBe('hfatih')
+  })
+
+  it('falls back cleanly when one representation is missing', () => {
+    expect(userDirectoryName({ username: 'admin' }, 'full-name')).toBe('admin')
+    expect(userDirectoryName({ fullName: 'Synapse Admin' }, 'username')).toBe('Synapse Admin')
   })
 })
 

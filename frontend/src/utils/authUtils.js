@@ -37,3 +37,12 @@ export function getInitials(name) {
   const last = parts.length > 1 ? parts[parts.length - 1][0] : ''
   return (first + last).toUpperCase() || '?'
 }
+
+const USER_AVATAR_COLORS = ['#3b6ea5', '#3f8f7a', '#6b8f3f', '#c17a3d', '#b25c4a', '#b25c7a', '#7c6bae', '#5b6b85']
+
+export function getUserAvatarColor(identity) {
+  const colorKey = String(identity || '')
+  let hash = 0
+  for (let index = 0; index < colorKey.length; index += 1) hash = ((hash << 5) - hash + colorKey.charCodeAt(index)) | 0
+  return USER_AVATAR_COLORS[Math.abs(hash) % USER_AVATAR_COLORS.length]
+}

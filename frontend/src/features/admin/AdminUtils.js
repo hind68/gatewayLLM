@@ -20,7 +20,21 @@ export function formatAction(value) {
 }
 
 export function formatEntity(value) {
-  const labels = { UserLlmRestriction: 'Restriction de modèle', USER_LLM_RESTRICTION: 'Restriction de modèle', USER_BANNED_WORD: 'Mot banni utilisateur', GLOBAL_BANNED_WORD: 'Mot banni global', LLM_MODEL: 'Modèle', PROVIDER: 'Fournisseur', DLP_PATTERN: 'Pattern DLP' }
+  const labels = {
+    GlobalBannedWord: 'Mot banni global',
+    GLOBAL_BANNED_WORD: 'Mot banni global',
+    UserBannedWord: 'Mot banni utilisateur',
+    USER_BANNED_WORD: 'Mot banni utilisateur',
+    ROLE_BANNED_WORD: 'Mot banni par rôle',
+    UserLlmRestriction: 'Restriction de modèle utilisateur',
+    USER_LLM_RESTRICTION: 'Restriction de modèle utilisateur',
+    ROLE_LLM_RESTRICTION: 'Restriction de modèle par rôle',
+    DLP_PATTERN: 'Pattern DLP',
+    LLM_PROVIDER: 'Fournisseur LLM',
+    PROVIDER: 'Fournisseur LLM',
+    LLM_MODEL: 'Modèle LLM',
+    KEYCLOAK_USER: 'Compte utilisateur',
+  }
   return labels[value] || String(value || 'Ressource').replaceAll('_', ' ')
 }
 
@@ -32,6 +46,30 @@ export function restrictionModelOptions(models) {
       displayName: model.nomAffichage || model.displayName || model.aliasInterne || model.alias,
     }))
     .filter((model) => Boolean(model.alias))
+}
+
+export function canManageUserSettings(actorIsSuperAdmin, targetRoles) {
+  const roles = new Set((targetRoles || []).map((role) => String(role).toUpperCase()))
+  if (roles.has('SUPER_ADMIN')) return false
+  return !roles.has('ADMIN') || actorIsSuperAdmin
+}
+
+export function editablePermissionRoles(roles, actorIsSuperAdmin) {
+  return (roles || []).filter((role) => {
+    const name = String(role?.name || role).toUpperCase()
+    return name !== 'SUPER_ADMIN' && (name !== 'ADMIN' || actorIsSuperAdmin)
+  })
+}
+
+export function assignableUserRoles(roles) {
+  return (roles || []).filter((role) => String(role?.name || role).toUpperCase() !== 'SUPER_ADMIN')
+}
+
+export function userDirectoryName(user, mode = 'full-name') {
+  const fullName = String(user?.fullName || '').trim()
+  const username = String(user?.username || '').trim()
+  const fallback = String(user?.nomAffichage || user?.email || 'Utilisateur').trim()
+  return mode === 'username' ? (username || fullName || fallback) : (fullName || username || fallback)
 }
 
 export function formatDateFilterValue(value) {
