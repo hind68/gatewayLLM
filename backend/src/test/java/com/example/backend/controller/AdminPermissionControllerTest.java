@@ -1,6 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.entity.Utilisateur;
+import com.example.backend.integration.keycloak.KeycloakAdminClient;
 import com.example.backend.repository.AuditLogRepository;
 import com.example.backend.repository.GlobalBannedWordRepository;
 import com.example.backend.repository.UserBannedWordRepository;
@@ -35,13 +36,15 @@ class AdminPermissionControllerTest {
     @Mock UserBannedWordRepository userBannedWordRepo;
     @Mock UtilisateurRepository utilisateurRepository;
     @Mock AuditLogRepository auditLogRepository;
+    @Mock KeycloakAdminClient keycloakAdminClient;
 
     private AdminPermissionController controller;
     private JwtAuthenticationToken auth;
 
     private void setUp() {
         controller = new AdminPermissionController(
-                globalBannedWordRepo, userLlmRestrictionRepo, userBannedWordRepo, utilisateurRepository, auditLogRepository);
+                globalBannedWordRepo, userLlmRestrictionRepo, userBannedWordRepo, utilisateurRepository, auditLogRepository,
+                keycloakAdminClient);
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject(ADMIN_ID.toString()).build();
         auth = new JwtAuthenticationToken(jwt);
     }
@@ -50,6 +53,7 @@ class AdminPermissionControllerTest {
     void addLlmRestrictionRejectsUnknownTargetUser() {
         setUp();
         when(utilisateurRepository.findByExternalId(TARGET_USER_ID.toString())).thenReturn(Optional.empty());
+        when(keycloakAdminClient.userExists(TARGET_USER_ID.toString())).thenReturn(false);
         Map<String, String> payload = Map.of("userId", TARGET_USER_ID.toString(), "llmModelAlias", "secure-groq");
 
         assertThatThrownBy(() -> controller.addLlmRestriction(payload, auth))
@@ -76,9 +80,24 @@ class AdminPermissionControllerTest {
     }
 
     @Test
+    void addLlmRestrictionSucceedsForKeycloakUserWhoNeverLoggedIn() {
+        setUp();
+        when(utilisateurRepository.findByExternalId(TARGET_USER_ID.toString())).thenReturn(Optional.empty());
+        when(keycloakAdminClient.userExists(TARGET_USER_ID.toString())).thenReturn(true);
+        when(userLlmRestrictionRepo.save(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var saved = controller.addLlmRestriction(
+                Map.of("userId", TARGET_USER_ID.toString(), "llmModelAlias", "secure-groq"), auth);
+
+        assertThat(saved.getUserKeycloakId()).isEqualTo(TARGET_USER_ID);
+    }
+
+    @Test
     void addUserBannedWordRejectsUnknownTargetUser() {
         setUp();
         when(utilisateurRepository.findByExternalId(TARGET_USER_ID.toString())).thenReturn(Optional.empty());
+        when(keycloakAdminClient.userExists(TARGET_USER_ID.toString())).thenReturn(false);
         Map<String, String> payload = Map.of("userId", TARGET_USER_ID.toString(), "word", "secret");
 
         assertThatThrownBy(() -> controller.addUserBannedWord(payload, auth))
@@ -99,6 +118,21 @@ class AdminPermissionControllerTest {
         Map<String, String> payload = Map.of("userId", TARGET_USER_ID.toString(), "word", "Secret");
 
         var saved = controller.addUserBannedWord(payload, auth);
+
+        assertThat(saved.getUserKeycloakId()).isEqualTo(TARGET_USER_ID);
+        assertThat(saved.getWord()).isEqualTo("secret");
+    }
+
+    @Test
+    void addUserBannedWordSucceedsForKeycloakUserWhoNeverLoggedIn() {
+        setUp();
+        when(utilisateurRepository.findByExternalId(TARGET_USER_ID.toString())).thenReturn(Optional.empty());
+        when(keycloakAdminClient.userExists(TARGET_USER_ID.toString())).thenReturn(true);
+        when(userBannedWordRepo.save(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var saved = controller.addUserBannedWord(
+                Map.of("userId", TARGET_USER_ID.toString(), "word", "Secret"), auth);
 
         assertThat(saved.getUserKeycloakId()).isEqualTo(TARGET_USER_ID);
         assertThat(saved.getWord()).isEqualTo("secret");

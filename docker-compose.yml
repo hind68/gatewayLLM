@@ -122,6 +122,50 @@ services:
         condition: service_started
     restart: "no"
 
+  backend:
+    build:
+      context: ./backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-secure_llm_gateway}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-secure_llm_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-change_me_local_only}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local-litellm}
+      DLP_BASE_URL: http://dlp-service:8000
+      DLP_ADMIN_KEY: ${DLP_ADMIN_KEY:-dev-dlp-admin}
+      KEYCLOAK_ADMIN_BASE_URL: http://keycloak:8080
+      KEYCLOAK_ISSUER_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8080}/realms/synapse
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/synapse/protocol/openid-connect/certs
+      GATEWAY_ADMIN_CLIENT_SECRET: ${GATEWAY_ADMIN_CLIENT_SECRET:?Set GATEWAY_ADMIN_CLIENT_SECRET in .env}
+      ATTACHMENTS_STORAGE_DIR: /app/storage/attachments
+    ports:
+      - "${BACKEND_HOST_PORT:-8081}:8081"
+    volumes:
+      - backend_attachment_data:/app/storage/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      dlp-service:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_BACKEND_PROXY_TARGET: http://backend:8081
+      VITE_KEYCLOAK_URL: http://localhost:${KEYCLOAK_HOST_PORT:-8080}
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   secure_llm_postgres_data:
   keycloak_postgres_data:
+  backend_attachment_data:

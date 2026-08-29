@@ -1,10 +1,10 @@
 export const ADMIN_NAV_ITEMS = [
-  { id: 'overview', label: "Vue d'ensemble", icon: 'grid', iconSrc: '/assets/admin-overview.png' },
-  { id: 'security', label: 'Sécurité', icon: 'shield', iconSrc: '/assets/admin-security.png' },
-  { id: 'models', label: 'Modèles', icon: 'spark', iconSrc: '/assets/admin-models.png' },
-  { id: 'users', label: 'Utilisateurs', icon: 'users', iconSrc: '/assets/admin-users.png' },
-  { id: 'roles', label: 'Rôles', icon: 'key', iconSrc: '/assets/admin-roles.png' },
-  { id: 'audit', label: "Journal d'audit", icon: 'activity', iconSrc: '/assets/admin-audit-log-cropped.png' },
+  { id: 'overview', label: "Vue d'ensemble", icon: 'bentoGrid', iconPng: '/assets/admin-icons/overview.png' },
+  { id: 'security', label: 'Sécurité', icon: 'shieldCheck', iconPng: '/assets/admin-icons/security.png' },
+  { id: 'models', label: 'Modèles', icon: 'chatSpark', iconPng: '/assets/admin-icons/models.png' },
+  { id: 'users', label: 'Utilisateurs', icon: 'peopleGroup', iconPng: '/assets/admin-icons/users.png' },
+  { id: 'roles', label: 'Rôles', icon: 'keyRing', iconPng: '/assets/admin-icons/roles.png' },
+  { id: 'audit', label: "Journal d'audit", icon: 'docSearch', iconPng: '/assets/admin-icons/audit.png' },
 ]
 
 export function formatKicker(value) {

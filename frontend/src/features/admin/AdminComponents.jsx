@@ -43,6 +43,12 @@ export function Icon({ name, size = 18, strokeWidth = 1.8 }) {
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
     filter: <path d="M4 5h16l-6.5 7.5V19l-3 1.5v-8Z" />,
+    shieldCheck: <><path d="M12 2.2c1.7 1.4 3.9 2.1 6 2.1.4 1.2.6 2.4.6 3.7 0 5.7-2.9 9.9-6.6 11.8-3.7-1.9-6.6-6.1-6.6-11.8 0-1.3.2-2.5.6-3.7 2.1 0 4.3-.7 6-2.1Z" /><path d="m8.7 12.3 2.2 2.2 4.4-4.9" /></>,
+    bentoGrid: <><rect x="3" y="3" width="7" height="6" rx="1.3" /><rect x="13" y="3" width="8" height="10" rx="1.3" /><rect x="3" y="12" width="8" height="9" rx="1.3" /><rect x="14" y="16" width="7" height="5" rx="1.3" /></>,
+    chatSpark: <><path d="M5 3h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none" /><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none" /><path d="M19.5 2.5q.4 1.6 1.4 2.6t2.6 1.4q-1.6.4-2.6 1.4t-1.4 2.6q-.4-1.6-1.4-2.6t-2.6-1.4q1.6-.4 2.6-1.4t1.4-2.6Z" /></>,
+    keyRing: <><circle cx="7" cy="7" r="4" /><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" /><path d="M10 10 20 20M14.5 15.5l2-2M17 18l2-2" /></>,
+    docSearch: <><path d="M6.5 3h7l4 4v13a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M13.5 3v4h4" /><path d="M8.5 10.5h4M8.5 13.5h3" /><circle cx="15" cy="16" r="2.6" /><path d="m17 18 2.3 2.3" /></>,
+    peopleGroup: <><circle cx="12" cy="7.5" r="2.6" /><path d="M7 19.5v-1.2c0-2.7 2.2-4.8 5-4.8s5 2.1 5 4.8v1.2" /><circle cx="4.5" cy="10" r="2" /><path d="M1.5 19v-.8c0-1.9 1.3-3.4 3-3.9" /><circle cx="19.5" cy="10" r="2" /><path d="M22.5 19v-.8c0-1.9-1.3-3.4-3-3.9" /></>,
   }
   return <svg {...common}>{paths[name] || paths.grid}</svg>
 }

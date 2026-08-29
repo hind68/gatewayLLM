@@ -1,10 +1,11 @@
 import { useContext, useState } from 'react'
-import { getInitials } from '../../utils/authUtils'
+import { getInitials, hasAdminRole } from '../../utils/authUtils'
 import { AuthContext } from '../../AuthProvider'
 import ArchiveTabs from '../conversations/components/ArchiveTabs'
 import ConversationList from '../conversations/components/ConversationList'
 import { Icon } from '../admin/AdminComponents'
 import { ADMIN_NAV_ITEMS } from '../admin/AdminUtils'
+import ConfirmDialog from '../../components/common/ConfirmDialog'
 
 export default function Sidebar({
   activeConversation,
@@ -50,11 +51,14 @@ export default function Sidebar({
 }) {
   const keycloak = useContext(AuthContext)
   const [isSidebarOpening, setIsSidebarOpening] = useState(false)
+  const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false)
   const displayName =
     keycloak?.tokenParsed?.name ||
     keycloak?.tokenParsed?.preferred_username ||
     'Utilisateur'
   const initials = getInitials(displayName)
+  const email = keycloak?.tokenParsed?.email || ''
+  const roleLabel = hasAdminRole(keycloak?.token) ? 'Administrateur' : 'Utilisateur'
 
   // Keep the same sidebar shell mounted and only switch its navigation content.
   // This is what allows the chat navigation to visually transition into admin navigation.
@@ -337,13 +341,13 @@ export default function Sidebar({
             </span>
           </button>
           {isSidebarOpen && isAccountMenuOpen && (
-            <AccountPopover />
+            <AccountPopover displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} onRequestLogout={() => setShowLogoutConfirmation(true)} />
           )}
         </div>
       </aside>
 
       {!isSidebarOpen && isAccountMenuOpen && (
-        <AccountPopover className="account-popover-collapsed" />
+        <AccountPopover className="account-popover-collapsed" displayName={displayName} email={email} roleLabel={roleLabel} initials={initials} onRequestLogout={() => setShowLogoutConfirmation(true)} />
       )}
 
       {!isSidebarOpen && collapsedPanel && (
@@ -364,20 +368,38 @@ export default function Sidebar({
           />
         </div>
       )}
+      {showLogoutConfirmation && (
+        <ConfirmDialog
+          title="Se déconnecter ?"
+          message="Votre session Synapse sera fermée sur cet appareil."
+          confirmLabel="Se déconnecter"
+          cancelLabel="Annuler"
+          onCancel={() => setShowLogoutConfirmation(false)}
+          onConfirm={() => keycloak?.logout({ redirectUri: window.location.origin })}
+        />
+      )}
     </>
   )
 }
 
-function AccountPopover({ className = 'account-popover-open' }) {
-  const keycloak = useContext(AuthContext)
-
+function AccountPopover({ className = 'account-popover-open', displayName, email, roleLabel, initials, onRequestLogout }) {
   return (
     <div className={`account-popover ${className}`} role="menu" data-menu-root>
+      <div className="account-popover-profile">
+        <span className="user-avatar" aria-hidden="true">{initials}</span>
+        <div className="account-popover-identity">
+          <strong>{displayName}</strong>
+          {email && <small>{email}</small>}
+          <span className="account-popover-role">{roleLabel}</span>
+        </div>
+      </div>
       <button
         type="button"
         role="menuitem"
-        onClick={() => keycloak?.logout({ redirectUri: window.location.origin })}
+        className="account-popover-logout"
+        onClick={onRequestLogout}
       >
+        <Icon name="logout" size={15} />
         Se déconnecter
       </button>
     </div>

@@ -181,16 +181,9 @@
 .search-line,
 .advanced-filters,
 .attachment-chip,
-.admin-search-field,
 .admin-input,
-.inline-add-form input,
-.inline-add-form select,
-.admin-field input,
-.admin-field select,
-.admin-field textarea,
 .role-check,
 .restriction-chip,
-.admin-pagination button,
 .admin-button.secondary {
   border: 0;
   box-shadow: var(--surface-shadow-xs);
@@ -200,14 +193,11 @@
 .search-modal-input:focus,
 .search-modal-input:focus-visible {
   border: 0 !important;
-  box-shadow: var(--surface-divider-y);
+  border-bottom: 1px solid #d1d5db !important;
+  box-shadow: none !important;
 }
 
-.composer:focus-within,
-.admin-search-field:focus-within,
-.admin-field input:focus,
-.admin-field select:focus,
-.admin-field textarea:focus {
+.composer:focus-within {
   border-color: transparent !important;
 }
 

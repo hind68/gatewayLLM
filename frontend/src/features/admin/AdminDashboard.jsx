@@ -75,7 +75,7 @@ const MODEL_LOGO_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'imag
 const MAX_MODEL_LOGO_BYTES = 512 * 1024
 const MANAGED_KEYCLOAK_ROLES = ['ADMIN', 'INTERN', 'EXTERN']
 const ROLE_LABELS = { ADMIN: 'Administrateur', INTERN: 'Interne', EXTERN: 'Externe' }
-const USER_AVATAR_COLORS = ['#496a8f', '#3f766c', '#685d8f', '#a6613f', '#925769', '#4f7551', '#526273', '#8a6a32']
+const USER_AVATAR_COLORS = ['#3b6ea5', '#3f8f7a', '#6b8f3f', '#c17a3d', '#b25c4a', '#b25c7a', '#7c6bae', '#5b6b85']
 
 function roleLabel(role) {
   return ROLE_LABELS[String(role || '').toUpperCase()] || role || 'Aucun rôle'
@@ -162,7 +162,10 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   const [modelSearch, setModelSearch] = useState('')
   const [providerModal, setProviderModal] = useState(null)
   const [modelModal, setModelModal] = useState(null)
-  const [modelTestResults, setModelTestResults] = useState({})
+  const [modelTestResults, setModelTestResults] = useState(() => {
+    try { return JSON.parse(window.localStorage.getItem('synapse-model-test-results') || '{}') }
+    catch { return {} }
+  })
 
   const [selectedRole, setSelectedRole] = useState('')
   const [roleRestrictions, setRoleRestrictions] = useState([])
@@ -199,6 +202,9 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
   useEffect(() => {
     window.localStorage.setItem('synapse-admin-section', activeSection)
   }, [activeSection])
+  useEffect(() => {
+    window.localStorage.setItem('synapse-model-test-results', JSON.stringify(modelTestResults))
+  }, [modelTestResults])
   useEffect(() => {
     if (!token) return
     void loadInitialData()
@@ -318,9 +324,23 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
     try { const data = await fetchFilteredMessages(token, { page: filteredPage, size: 10, search: filteredSearch, action: filteredAction, userId: filteredUserId, ...dateRange(filteredDate) }); setFilteredMessages(data?.content || []); setFilteredTotalPages(data?.totalPages || 0); setStatus('audit', 'success') } catch (error) { setStatus('audit', 'error', error.message); fail(error) }
   }
   async function mutate(key, operation, successMessage, reload) {
-    if (busyAction) return
+    if (busyAction) { notify('Une autre action est en cours, veuillez patienter…'); return false }
     setBusyAction(key)
-    try { await operation(); notify(successMessage); if (reload) await reload() } catch (error) { fail(error) } finally { setBusyAction('') }
+    try { await operation(); notify(successMessage); if (reload) await reload(); return true } catch (error) { fail(error); return false } finally { setBusyAction('') }
+  }
+  async function testModel(model) {
+    if (busyAction) return
+    const testedAt = new Date().toISOString()
+    setBusyAction(`test-model-${model.id}`)
+    setModelTestResults((current) => ({ ...current, [model.id]: { state: 'testing', testedAt } }))
+    try {
+      const result = await testAdminModel(model.id, token)
+      setModelTestResults((current) => ({ ...current, [model.id]: { ...result, state: 'complete', testedAt: new Date().toISOString() } }))
+      notify('Test du modèle terminé')
+    } catch (error) {
+      setModelTestResults((current) => ({ ...current, [model.id]: { state: 'failed', status: 'FAILED', testedAt: new Date().toISOString() } }))
+      fail(error)
+    } finally { setBusyAction('') }
   }
   async function saveProviderFromModal(data) {
     if (busyAction) return
@@ -353,8 +373,8 @@ export default function AdminDashboard({ activeSection: controlledActiveSection,
         <AdminPageHeader title={sectionTitle(activeSection)} description={sectionDescription(activeSection)} />
         {activeSection === 'overview' && <OverviewSection loading={loading} errors={errorFor} users={users} activeModels={activeModels} adminModels={adminModels} patterns={patterns} activePatterns={activePatterns} globalWords={globalWords} securityMetrics={securityMetrics} chartData={chartData} overviewMessages={overviewMessages} onSectionChange={setActiveSection} />}
         {activeSection === 'security' && <SecuritySection loading={loading} errorFor={errorFor} globalWords={filteredWords} wordSearch={wordSearch} setWordSearch={setWordSearch} onAddWord={(value) => mutate('global-word', () => addGlobalBannedWord(value, token), 'Mot banni ajouté', loadGlobalWords)} onDeleteWord={(id, word) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: `« ${word} » sera supprimé des règles globales.`, onConfirm: () => mutate('delete-word', () => removeGlobalBannedWord(id, token), 'Mot banni supprimé', loadGlobalWords) })} patterns={filteredPatterns} patternSearch={patternSearch} setPatternSearch={setPatternSearch} onCreatePattern={() => setPatternModal({ ...blankPattern, mode: 'create' })} onEditPattern={(pattern) => setPatternModal({ ...blankPattern, ...pattern, mode: 'edit' })} onTogglePattern={(pattern) => mutate(`pattern-${pattern.name}`, () => updatePattern(pattern.name, { ...pattern, enabled: pattern.enabled === false }, token), pattern.enabled === false ? 'Pattern activé' : 'Pattern désactivé', loadPatterns)} onDeletePattern={(name) => askConfirmation({ title: 'Supprimer ce pattern ?', message: 'Cette règle DLP sera supprimée définitivement.', onConfirm: () => mutate('delete-pattern', () => removePattern(name, token), 'Pattern supprimé', loadPatterns) })} onCopyExpression={() => notify('Expression copiée')} onCopyError={fail} />}
-        {activeSection === 'models' && <ModelsSection loading={loading} errorFor={errorFor} providers={filteredProviders} allProviders={adminProviders} models={filteredAdminModels} allModels={adminModels} availableModels={availableModels} providerSearch={providerSearch} setProviderSearch={setProviderSearch} modelSearch={modelSearch} setModelSearch={setModelSearch} onCreateProvider={() => setProviderModal({ ...blankProvider, mode: 'create' })} onEditProvider={(provider) => setProviderModal({ code: provider.code || '', name: provider.nom || provider.name || '', status: provider.statut || 'ACTIF', apiKeyEnvVar: provider.apiKeyEnvVar || '', id: provider.id, mode: 'edit' })} onToggleProvider={(provider) => mutate(`provider-status-${provider.id}`, () => updateAdminProvider(provider.id, { status: provider.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF' }, token), provider.statut === 'ACTIF' ? 'Fournisseur désactivé' : 'Fournisseur activé', async () => { await loadAdminProviders(); await refreshModelViews() })} onDeleteProvider={(provider) => askConfirmation({ title: 'Supprimer ce fournisseur ?', message: 'La suppression est refusée si des modèles y sont encore associés.', onConfirm: () => mutate('delete-provider', () => deleteAdminProvider(provider.id, token), 'Fournisseur supprimé', loadAdminProviders) })} onCreateModel={() => setModelModal({ ...blankModel, mode: 'create' })} onEditModel={(model) => setModelModal({ providerId: String(model.providerId || ''), alias: model.aliasInterne || model.alias || '', providerModel: model.nomModeleProvider || '', displayName: model.nomAffichage || '', description: model.description || '', logoUrl: model.logoUrl || '', status: model.statut || 'ACTIF', id: model.id, mode: 'edit' })} onToggleModel={(model) => mutate(`model-status-${model.id}`, () => setAdminModelStatus(model.id, model.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF', token), model.statut === 'ACTIF' ? 'Modèle désactivé' : 'Modèle activé', async () => { await refreshModelViews(); await loadSecurityData() })} onDeleteModel={(model) => askConfirmation({ title: 'Supprimer ce modèle ?', message: 'La suppression est refusée si des conversations ou restrictions le référencent.', onConfirm: () => mutate('delete-model', () => deleteAdminModel(model.id, token), 'Modèle supprimé', refreshModelViews) })} onTestModel={(model) => mutate(`test-model-${model.id}`, async () => { const result = await testAdminModel(model.id, token); setModelTestResults((current) => ({ ...current, [model.id]: { ...result, testedAt: new Date().toISOString() } })) }, 'Test du modèle terminé')} modelTestResults={modelTestResults} />}
-        {activeSection === 'users' && <UsersSection loading={loading} errorFor={errorFor} users={filteredUsers} allUsers={users} search={userSearch} setSearch={setUserSearch} selectedUser={selectedUser} onSelectUser={selectUser} keycloakRoles={keycloakRoles} keycloakRolesError={errorFor('keycloakRoles')} onRetryKeycloakRoles={loadKeycloakRoles} selectedRoles={selectedKeycloakRoles} setSelectedRoles={setSelectedKeycloakRoles} onSaveRoles={() => mutate('user-roles', () => setKeycloakUserRoles(selectedUser.externalId, selectedKeycloakRoles, token), 'Rôles mis à jour')} restrictions={userRestrictions} bannedWords={userBannedWords} models={availableModels} selectedModel={userModel} setSelectedModel={setUserModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={() => mutate('user-restriction', () => addLlmRestriction(selectedUser.externalId, userModel, token), 'Restriction ajoutée', () => selectUser(selectedUser))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer cette restriction ?', message: `La restriction « ${item.llmModelAlias} » sera supprimée.`, onConfirm: () => mutate('delete-user-restriction', () => removeLlmRestriction(item.id, token), 'Restriction supprimée', () => selectUser(selectedUser)) })} onAddWord={() => mutate('user-word', () => addUserBannedWord(selectedUser.externalId, userWord, token), 'Mot banni ajouté', () => { setUserWord(''); return selectUser(selectedUser) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot ?', message: `« ${item.word} » sera supprimé pour cet utilisateur.`, onConfirm: () => mutate('delete-user-word', () => removeUserBannedWord(item.id, token), 'Mot banni supprimé', () => selectUser(selectedUser)) })} onToggleUser={(user) => mutate('user-status', () => setKeycloakUserEnabled(user.externalId, !user.enabled, token), user.enabled ? 'Utilisateur désactivé' : 'Utilisateur activé', loadUsers)} />}
+        {activeSection === 'models' && <ModelsSection loading={loading} errorFor={errorFor} providers={filteredProviders} allProviders={adminProviders} models={filteredAdminModels} allModels={adminModels} availableModels={availableModels} providerSearch={providerSearch} setProviderSearch={setProviderSearch} modelSearch={modelSearch} setModelSearch={setModelSearch} onCreateProvider={() => setProviderModal({ ...blankProvider, mode: 'create' })} onEditProvider={(provider) => setProviderModal({ code: provider.code || '', name: provider.nom || provider.name || '', status: provider.statut || 'ACTIF', apiKeyEnvVar: provider.apiKeyEnvVar || '', id: provider.id, mode: 'edit' })} onToggleProvider={(provider) => mutate(`provider-status-${provider.id}`, () => updateAdminProvider(provider.id, { status: provider.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF' }, token), provider.statut === 'ACTIF' ? 'Fournisseur désactivé' : 'Fournisseur activé', async () => { await loadAdminProviders(); await refreshModelViews() })} onDeleteProvider={(provider) => askConfirmation({ title: 'Supprimer ce fournisseur ?', message: 'La suppression est refusée si des modèles y sont encore associés.', onConfirm: () => mutate('delete-provider', () => deleteAdminProvider(provider.id, token), 'Fournisseur supprimé', loadAdminProviders) })} onCreateModel={() => setModelModal({ ...blankModel, mode: 'create' })} onEditModel={(model) => setModelModal({ providerId: String(model.providerId || ''), alias: model.aliasInterne || model.alias || '', providerModel: model.nomModeleProvider || '', displayName: model.nomAffichage || '', description: model.description || '', logoUrl: model.logoUrl || '', status: model.statut || 'ACTIF', id: model.id, mode: 'edit' })} onToggleModel={(model) => mutate(`model-status-${model.id}`, () => setAdminModelStatus(model.id, model.statut === 'ACTIF' ? 'INACTIF' : 'ACTIF', token), model.statut === 'ACTIF' ? 'Modèle désactivé' : 'Modèle activé', async () => { await refreshModelViews(); await loadSecurityData() })} onDeleteModel={(model) => askConfirmation({ title: 'Supprimer ce modèle ?', message: 'La suppression est refusée si des conversations ou restrictions le référencent.', onConfirm: () => mutate('delete-model', () => deleteAdminModel(model.id, token), 'Modèle supprimé', refreshModelViews) })} onTestModel={testModel} modelTestResults={modelTestResults} busyAction={busyAction} />}
+        {activeSection === 'users' && <UsersSection loading={loading} errorFor={errorFor} busyAction={busyAction} users={filteredUsers} allUsers={users} search={userSearch} setSearch={setUserSearch} selectedUser={selectedUser} onSelectUser={selectUser} keycloakRoles={keycloakRoles} keycloakRolesError={errorFor('keycloakRoles')} onRetryKeycloakRoles={loadKeycloakRoles} selectedRoles={selectedKeycloakRoles} setSelectedRoles={setSelectedKeycloakRoles} onSaveRoles={() => mutate('user-roles', () => setKeycloakUserRoles(selectedUser.externalId, selectedKeycloakRoles, token), 'Rôles mis à jour')} restrictions={userRestrictions} bannedWords={userBannedWords} models={availableModels} selectedModel={userModel} setSelectedModel={setUserModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={() => mutate('user-restriction', () => addLlmRestriction(selectedUser.externalId, userModel, token), 'Restriction ajoutée', () => selectUser(selectedUser))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer cette restriction ?', message: `La restriction « ${item.llmModelAlias} » sera supprimée.`, onConfirm: () => mutate('delete-user-restriction', () => removeLlmRestriction(item.id, token), 'Restriction supprimée', () => selectUser(selectedUser)) })} onAddWord={() => mutate('user-word', () => addUserBannedWord(selectedUser.externalId, userWord, token), 'Mot banni ajouté', () => { setUserWord(''); return selectUser(selectedUser) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot ?', message: `« ${item.word} » sera supprimé pour cet utilisateur.`, onConfirm: () => mutate('delete-user-word', () => removeUserBannedWord(item.id, token), 'Mot banni supprimé', () => selectUser(selectedUser)) })} onToggleUser={(user) => mutate('user-status', () => setKeycloakUserEnabled(user.externalId, !user.enabled, token), user.enabled ? 'Utilisateur désactivé' : 'Utilisateur activé', loadUsers)} />}
         {activeSection === 'roles' && <RolesSection loading={loading('roles')} errorFor={errorFor} roles={keycloakRoles.map((item) => item.name).filter(Boolean)} roleCounts={roleCounts} rolesLoading={loading('keycloakRoles')} rolesError={errorFor('keycloakRoles')} onRetryRoles={() => selectedRole ? loadRoleData(selectedRole) : loadKeycloakRoles()} role={selectedRole} setRole={setSelectedRole} restrictions={roleRestrictions} bannedWords={roleBannedWords} models={availableModels} selectedModel={roleModel} setSelectedModel={setRoleModel} word={roleWord} setWord={setRoleWord} onAddRestriction={() => mutate('role-restriction', () => addRoleLlmRestriction(selectedRole, roleModel, token), 'Restriction ajoutée', () => loadRoleData(selectedRole))} onRemoveRestriction={(item) => askConfirmation({ title: 'Supprimer la restriction ?', message: 'La restriction sera supprimée pour ce rôle.', onConfirm: () => mutate('delete-role-restriction', () => removeRoleLlmRestriction(item.id, token), 'Restriction supprimée', () => loadRoleData(selectedRole)) })} onAddWord={() => mutate('role-word', () => addRoleBannedWord(selectedRole, roleWord, token), 'Mot banni ajouté', () => { setRoleWord(''); return loadRoleData(selectedRole) })} onRemoveWord={(item) => askConfirmation({ title: 'Supprimer ce mot banni ?', message: 'Ce mot sera supprimé pour le rôle sélectionné.', onConfirm: () => mutate('delete-role-word', () => removeRoleBannedWord(item.id, token), 'Mot banni supprimé', () => loadRoleData(selectedRole)) })} />}
         {activeSection === 'audit' && <AuditSection loading={loading('audit')} error={errorFor('audit')} view={auditView} setView={(view) => { setAuditView(view); setExpandedAuditId(null) }} logs={auditLogs} messages={filteredMessages} users={users} search={auditSearch} setSearch={(value) => { setAuditSearch(value); setAuditPage(0) }} action={auditAction} setAction={(value) => { setAuditAction(value); setAuditPage(0) }} entity={auditEntity} setEntity={(value) => { setAuditEntity(value); setAuditPage(0) }} date={auditDate} setDate={(value) => { setAuditDate(value); setAuditPage(0) }} filteredSearch={filteredSearch} setFilteredSearch={(value) => { setFilteredSearch(value); setFilteredPage(0) }} filteredAction={filteredAction} setFilteredAction={(value) => { setFilteredAction(value); setFilteredPage(0) }} filteredUserId={filteredUserId} setFilteredUserId={(value) => { setFilteredUserId(value); setFilteredPage(0) }} filteredDate={filteredDate} setFilteredDate={(value) => { setFilteredDate(value); setFilteredPage(0) }} expandedId={expandedAuditId} setExpandedId={setExpandedAuditId} page={auditView === 'permissions' ? auditPage : filteredPage} totalPages={auditView === 'permissions' ? auditTotalPages : filteredTotalPages} onPageChange={auditView === 'permissions' ? setAuditPage : setFilteredPage} />}
       </div>
@@ -569,7 +589,7 @@ function providerLogoAlias(provider) {
   return provider?.code || provider?.nom || provider?.name || 'provider'
 }
 
-function ModelsSection({ loading, errorFor, providers, models, allModels, availableModels, providerSearch, setProviderSearch, modelSearch, setModelSearch, onCreateProvider, onEditProvider, onToggleProvider, onDeleteProvider, onCreateModel, onEditModel, onToggleModel, onDeleteModel, onTestModel, modelTestResults }) {
+function ModelsSection({ loading, errorFor, providers, models, allModels, availableModels, providerSearch, setProviderSearch, modelSearch, setModelSearch, onCreateProvider, onEditProvider, onToggleProvider, onDeleteProvider, onCreateModel, onEditModel, onToggleModel, onDeleteModel, onTestModel, modelTestResults, busyAction }) {
   const [view, setView] = useState('models')
   const [selectedModel, setSelectedModel] = useState(null)
   const [selectedProvider, setSelectedProvider] = useState(null)
@@ -599,7 +619,6 @@ function ModelsSection({ loading, errorFor, providers, models, allModels, availa
                     <span className="row-main"><strong>{title}</strong><small>{providerName} · {adminModel?.description || model.description || 'Modèle LLM Synapse'}</small></span>
                     <StatusBadge status={adminModel ? adminModel.statut : 'available'} label={adminModel ? (adminModel.statut === 'ACTIF' ? 'Actif' : 'Inactif') : 'Disponible'} />
                     {adminModel ? <OverflowMenu label={`Actions pour ${title}`} items={[
-                      { label: 'Tester la connexion', icon: 'activity', onSelect: () => onTestModel(adminModel) },
                       { label: 'Modifier', icon: 'edit', onSelect: () => onEditModel(adminModel) },
                       { label: adminModel.statut === 'ACTIF' ? 'Désactiver' : 'Activer', icon: 'power', onSelect: () => onToggleModel(adminModel) },
                       { label: 'Supprimer', icon: 'trash', danger: true, onSelect: () => onDeleteModel(adminModel) },
@@ -641,7 +660,7 @@ function ModelsSection({ loading, errorFor, providers, models, allModels, availa
         </section>
       )}
 
-      {selectedModel && <ModelDetailDrawer selection={selectedModel} result={selectedModel.adminModel ? modelTestResults[selectedModel.adminModel.id] : null} onClose={() => setSelectedModel(null)} onEdit={onEditModel} onTest={onTestModel} />}
+      {selectedModel && <ModelDetailDrawer selection={selectedModel} result={selectedModel.adminModel ? modelTestResults[selectedModel.adminModel.id] : null} testing={selectedModel.adminModel ? busyAction === `test-model-${selectedModel.adminModel.id}` : false} onClose={() => setSelectedModel(null)} onEdit={onEditModel} onTest={onTestModel} />}
       {selectedProvider && (
         <DetailDrawer title={selectedProvider.nom || selectedProvider.name || selectedProvider.code} description="Configuration du fournisseur" onClose={() => setSelectedProvider(null)}>
           <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { setSelectedProvider(null); onEditProvider(selectedProvider) }}><Icon name="edit" size={15} />Modifier</button></div>
@@ -658,7 +677,7 @@ function ModelsSection({ loading, errorFor, providers, models, allModels, availa
   )
 }
 
-function ModelDetailDrawer({ selection, result, onClose, onEdit, onTest }) {
+function ModelDetailDrawer({ selection, result, testing, onClose, onEdit, onTest }) {
   const { model, adminModel } = selection
   const alias = adminModel ? (adminModel.aliasInterne || adminModel.alias) : model.alias
   const meta = modelCardMeta(alias)
@@ -666,7 +685,7 @@ function ModelDetailDrawer({ selection, result, onClose, onEdit, onTest }) {
   const providerName = adminModel?.providerName || model.providerName || modelProviderName(alias)
   return (
     <DetailDrawer title={title} description={providerName} onClose={onClose}>
-      {adminModel && <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { onClose(); onEdit(adminModel) }}><Icon name="edit" size={15} />Modifier</button><button type="button" className="admin-button secondary" onClick={() => onTest(adminModel)}>Tester la connexion</button></div>}
+      {adminModel && <div className="drawer-action-row"><button type="button" className="admin-button primary" onClick={() => { onClose(); onEdit(adminModel) }}><Icon name="edit" size={15} />Modifier</button><button type="button" className="admin-button secondary" disabled={testing} onClick={() => onTest(adminModel)}>{testing ? 'Test en cours…' : 'Tester la connexion'}</button></div>}
       <div className="drawer-model-heading"><span className="model-mark large"><ModelLogo alias={alias} logoUrl={adminModel?.logoUrl || model.logoUrl} className="admin-model-logo" fallback={meta.initials} /></span><div><h3>{title}</h3><p>{adminModel?.description || model.description || meta.description || 'Modèle LLM disponible dans Synapse.'}</p></div></div>
       <div className="admin-detail-grid">
         <DetailValue label="Statut" value={<StatusBadge status={adminModel ? adminModel.statut : 'available'} label={adminModel ? (adminModel.statut === 'ACTIF' ? 'Actif' : 'Inactif') : 'Disponible'} />} />
@@ -674,15 +693,15 @@ function ModelDetailDrawer({ selection, result, onClose, onEdit, onTest }) {
         <DetailValue label="Alias interne" value={alias} />
         <DetailValue label="Identifiant fournisseur" value={adminModel?.nomModeleProvider || 'Non configuré'} />
         <DetailValue label="Logo" value={adminModel?.logoUrl ? 'Personnalisé' : 'Logo par défaut'} />
-        <DetailValue label="Dernier test" value={result?.testedAt ? formatDate(result.testedAt) : 'Non testé'} />
-        {result && <DetailValue label="Résultat du test" value={<StatusBadge status={['OK', 'CONNECTED'].includes(result.status) ? 'success' : 'error'} label={result.status} />} />}
+        <DetailValue label="État du test" value={testing ? <span className="model-test-progress"><span />Test en cours</span> : result?.testedAt ? `Terminé · ${formatDate(result.testedAt)}` : 'Non testé'} />
+        {result && !testing && <DetailValue label="Résultat du test" value={<StatusBadge status={['OK', 'CONNECTED', 'SUCCESS'].includes(String(result.status).toUpperCase()) ? 'success' : 'error'} label={result.status || 'FAILED'} />} />}
         {result?.latencyMs != null && <DetailValue label="Latence" value={`${result.latencyMs} ms`} />}
       </div>
     </DetailDrawer>
   )
 }
 
-function UsersSection({ loading, errorFor, users, allUsers, search, setSearch, selectedUser, onSelectUser, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+function UsersSection({ loading, errorFor, busyAction, users, allUsers, search, setSearch, selectedUser, onSelectUser, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
   return (
     <section className="admin-card">
       <SectionHeading title="Annuaire des utilisateurs" context={`${users.length} résultats`} />
@@ -701,14 +720,16 @@ function UsersSection({ loading, errorFor, users, allUsers, search, setSearch, s
           })}
         </div>
       ) : <EmptyState icon="users" title="Aucun utilisateur" description={allUsers.length ? 'Aucun résultat pour cette recherche.' : 'Les comptes apparaîtront ici lorsqu’ils seront disponibles.'} />}
-      <UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} user={selectedUser} onClose={() => onSelectUser(null)} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} />
+      <UserDetails loading={loading('userDetails')} error={errorFor('userDetails')} busyAction={busyAction} user={selectedUser} onClose={() => onSelectUser(null)} keycloakRoles={keycloakRoles} keycloakRolesError={keycloakRolesError} onRetryKeycloakRoles={onRetryKeycloakRoles} selectedRoles={selectedRoles} setSelectedRoles={setSelectedRoles} onSaveRoles={onSaveRoles} restrictions={restrictions} bannedWords={bannedWords} models={models} selectedModel={selectedModel} setSelectedModel={setSelectedModel} userWord={userWord} setUserWord={setUserWord} onAddRestriction={onAddRestriction} onRemoveRestriction={onRemoveRestriction} onAddWord={onAddWord} onRemoveWord={onRemoveWord} onToggleUser={onToggleUser} />
     </section>
   )
 }
 
-function UserDetails({ loading, error, user, onClose, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
+function UserDetails({ loading, error, busyAction, user, onClose, keycloakRoles, keycloakRolesError, onRetryKeycloakRoles, selectedRoles, setSelectedRoles, onSaveRoles, restrictions, bannedWords, models, selectedModel, setSelectedModel, userWord, setUserWord, onAddRestriction, onRemoveRestriction, onAddWord, onRemoveWord, onToggleUser }) {
   if (!user) return null
   const canManage = isUuid(user.externalId)
+  const addingRestriction = busyAction === 'user-restriction'
+  const addingWord = busyAction === 'user-word'
   const mainRole = roleLabel(selectedRoles[0] || user.roles?.[0] || user.realmRoles?.[0])
 
   return (
@@ -733,13 +754,13 @@ function UserDetails({ loading, error, user, onClose, keycloakRoles, keycloakRol
           </CollapsibleSection>
 
           <CollapsibleSection title="Modèles restreints" summary={`${restrictions.length} modèle${restrictions.length !== 1 ? 's' : ''} restreint${restrictions.length !== 1 ? 's' : ''}`} count={restrictions.length}>
-            <div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} disabled={!canManage} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!canManage || !selectedModel} title={!canManage ? 'Un UUID Keycloak est requis.' : undefined} onClick={onAddRestriction}>Ajouter</button></div>
+            <div className="inline-add-form"><SelectDropdown value={selectedModel} options={[{ value: '', label: 'Choisir un modèle…' }, ...models.map((model) => ({ value: model.alias, label: model.displayName }))]} onChange={setSelectedModel} disabled={!canManage} ariaLabel="Modèle à restreindre" className="admin-custom-dropdown" /><button type="button" className="admin-button secondary" disabled={!canManage || !selectedModel || addingRestriction} title={!canManage ? 'Un UUID Keycloak est requis.' : undefined} onClick={onAddRestriction}>{addingRestriction ? 'Ajout…' : 'Ajouter'}</button></div>
             {!canManage && <p className="helper-text">Les restrictions personnalisées nécessitent l’identifiant Keycloak du compte.</p>}
             <ChipList items={restrictions} empty="Aucune restriction personnalisée." labelKey="llmModelAlias" onRemove={onRemoveRestriction} />
           </CollapsibleSection>
 
           <CollapsibleSection title="Mots bannis personnels" summary={`${bannedWords.length} mot${bannedWords.length !== 1 ? 's' : ''}`} count={bannedWords.length}>
-            <div className="inline-add-form"><input value={userWord} onChange={(event) => setUserWord(event.target.value)} placeholder="Ajouter un mot ou une expression" disabled={!canManage} aria-label="Nouveau mot banni utilisateur" /><button type="button" className="admin-button secondary" disabled={!canManage || !userWord.trim()} onClick={onAddWord}>Ajouter</button></div>
+            <div className="inline-add-form"><input value={userWord} onChange={(event) => setUserWord(event.target.value)} placeholder="Ajouter un mot ou une expression" disabled={!canManage} aria-label="Nouveau mot banni utilisateur" /><button type="button" className="admin-button secondary" disabled={!canManage || !userWord.trim() || addingWord} onClick={onAddWord}>{addingWord ? 'Ajout…' : 'Ajouter'}</button></div>
             <ChipList items={bannedWords} empty="Aucun mot banni spécifique." labelKey="word" onRemove={onRemoveWord} />
           </CollapsibleSection>
         </div>
@@ -931,7 +952,7 @@ function ModelModal({ data, providers, busy, onClose, onSave }) {
           <Field label="Alias interne"><input value={form.alias} onChange={(event) => update('alias', event.target.value)} disabled={Boolean(data.id)} required placeholder="ex. secure-gpt" /></Field>
           <Field label="Modèle amont"><input value={form.providerModel} onChange={(event) => update('providerModel', event.target.value)} required placeholder="ex. openai/gpt-4o-mini" /><small className="admin-field-help">Identifiant chez le fournisseur.</small></Field>
           <Field label="Nom affiché"><input value={form.displayName} onChange={(event) => update('displayName', event.target.value)} required /></Field>
-          <Field label="Description"><textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows="2" /></Field>
+          <Field label="Description" wide><textarea value={form.description} onChange={(event) => update('description', event.target.value)} rows="2" /></Field>
         </div>
         <div className="model-logo-field">
           <div className="model-logo-field-heading"><span>Logo</span><div className="model-logo-source" role="tablist" aria-label="Source du logo"><button type="button" role="tab" aria-selected={logoMode === 'url'} className={logoMode === 'url' ? 'active' : ''} onClick={() => { setLogoMode('url'); setLogoError('') }}>URL</button><button type="button" role="tab" aria-selected={logoMode === 'local'} className={logoMode === 'local' ? 'active' : ''} onClick={() => { setLogoMode('local'); setLogoError('') }}>Local</button></div></div>
@@ -959,4 +980,4 @@ function DropdownField({ label, value, options, onChange, disabled = false, plac
   )
 }
 
-function Field({ label, children }) { return <label className="admin-field"><span>{label}</span>{children}</label> }
+function Field({ label, children, wide = false }) { return <label className={`admin-field${wide ? ' admin-field-wide' : ''}`}><span>{label}</span>{children}</label> }

@@ -16,12 +16,27 @@ function App() {
 
   const [notifications, setNotifications] = useState([])
   const notificationIdRef = useRef(0)
+  const lastNotifiedRef = useRef(new Map())
   const [showTabs, setShowTabs] = useState(false)
-  const [showAdminDashboard, setShowAdminDashboardState] = useState(false)
+  const [showAdminDashboard, setShowAdminDashboardState] = useState(
+    () => isAdmin && window.localStorage.getItem('synapse-active-workspace') === 'admin',
+  )
+
+  useEffect(() => {
+    // On a hard refresh, Keycloak's token is not available yet during the
+    // very first render, so `isAdmin` is briefly false and the lazy
+    // initializer above misses the saved workspace. Re-sync once the token
+    // (and therefore isAdmin) has loaded, so a refresh from the admin
+    // dashboard lands back on the admin dashboard instead of the chat view.
+    if (isAdmin && window.localStorage.getItem('synapse-active-workspace') === 'admin') {
+      setShowAdminDashboardState(true)
+    }
+  }, [isAdmin])
 
   const setShowAdminDashboard = useCallback((nextValue) => {
     const currentValue = showAdminDashboard
-    const resolvedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue
+    const requestedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue
+    const resolvedValue = Boolean(requestedValue) && isAdmin
     if (resolvedValue === currentValue) return
 
     const updateView = () => {
@@ -36,16 +51,14 @@ function App() {
     }
 
     document.startViewTransition(updateView)
-  }, [showAdminDashboard])
+  }, [isAdmin, showAdminDashboard])
 
   const showError = useCallback((message) => {
-    notificationIdRef.current += 1
-    setNotifications((current) => [...current, { id: notificationIdRef.current, kind: 'error', message }])
+    setNotifications((current) => appendNotification(current, notificationIdRef, lastNotifiedRef, 'error', message))
   }, [])
 
   const showNotice = useCallback((message) => {
-    notificationIdRef.current += 1
-    setNotifications((current) => [...current, { id: notificationIdRef.current, kind: 'success', message }])
+    setNotifications((current) => appendNotification(current, notificationIdRef, lastNotifiedRef, 'success', message))
   }, [])
 
   const clearChatError = useCallback(() => {
@@ -114,10 +127,8 @@ function App() {
   })
 
   useEffect(() => {
-    if (notifications.length === 0) return undefined
-    const timeout = window.setTimeout(clearFeedback, 5000)
-    return () => window.clearTimeout(timeout)
-  }, [notifications, clearFeedback])
+    window.localStorage.setItem('synapse-active-workspace', showAdminDashboard ? 'admin' : 'chat')
+  }, [isAdmin, showAdminDashboard])
 
   const conversationProps = {
     ...conversations,
@@ -176,3 +187,22 @@ function App() {
 }
 
 export default App
+
+// Repeated failures (e.g. a background poll retrying the same error) must not
+// flood the toast stack: beyond de-duplicating what's currently on screen, a
+// short cooldown also blocks the same message from reappearing right after it
+// auto-dismisses.
+const RENOTIFY_COOLDOWN_MS = 6000
+
+function appendNotification(current, idRef, lastNotifiedRef, kind, message) {
+  const normalizedMessage = String(message || '').trim()
+  if (!normalizedMessage) return current
+  const key = `${kind}:${normalizedMessage}`
+  const now = Date.now()
+  const lastShownAt = lastNotifiedRef.current.get(key)
+  if (lastShownAt != null && now - lastShownAt < RENOTIFY_COOLDOWN_MS) return current
+  if (current.some((item) => item.kind === kind && item.message === normalizedMessage)) return current
+  lastNotifiedRef.current.set(key, now)
+  idRef.current += 1
+  return [...current, { id: idRef.current, kind, message: normalizedMessage }]
+}

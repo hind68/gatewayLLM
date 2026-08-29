@@ -5,6 +5,7 @@ import com.example.backend.entity.GlobalBannedWord;
 import com.example.backend.entity.UserBannedWord;
 import com.example.backend.entity.UserLlmRestriction;
 import com.example.backend.entity.Utilisateur;
+import com.example.backend.integration.keycloak.KeycloakAdminClient;
 import com.example.backend.repository.AuditLogRepository;
 import com.example.backend.repository.GlobalBannedWordRepository;
 import com.example.backend.repository.UserBannedWordRepository;
@@ -33,18 +34,21 @@ public class AdminPermissionController {
     private final UserBannedWordRepository userBannedWordRepo;
     private final UtilisateurRepository utilisateurRepository;
     private final AuditLogRepository auditLogRepository;
+    private final KeycloakAdminClient keycloakAdminClient;
 
     public AdminPermissionController(
             GlobalBannedWordRepository globalBannedWordRepo,
             UserLlmRestrictionRepository userLlmRestrictionRepo,
             UserBannedWordRepository userBannedWordRepo,
             UtilisateurRepository utilisateurRepository,
-            AuditLogRepository auditLogRepository) {
+            AuditLogRepository auditLogRepository,
+            KeycloakAdminClient keycloakAdminClient) {
         this.globalBannedWordRepo = globalBannedWordRepo;
         this.userLlmRestrictionRepo = userLlmRestrictionRepo;
         this.userBannedWordRepo = userBannedWordRepo;
         this.utilisateurRepository = utilisateurRepository;
         this.auditLogRepository = auditLogRepository;
+        this.keycloakAdminClient = keycloakAdminClient;
     }
 
     @GetMapping("/users")
@@ -136,7 +140,8 @@ public class AdminPermissionController {
         auditLogRepository.save(new AuditLog("DELETE", "UserBannedWord", String.valueOf(id), adminId));
     }
     private void requireExistingUser(UUID userKeycloakId) {
-        if (utilisateurRepository.findByExternalId(userKeycloakId.toString()).isEmpty()) {
+        if (utilisateurRepository.findByExternalId(userKeycloakId.toString()).isEmpty()
+                && !keycloakAdminClient.userExists(userKeycloakId.toString())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userKeycloakId);
         }
     }

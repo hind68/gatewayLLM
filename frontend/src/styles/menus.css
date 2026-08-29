@@ -29,6 +29,59 @@
   background: #f4f4f4;
 }
 
+.account-popover-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 7px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #eceef1;
+}
+
+.account-popover-profile .user-avatar {
+  flex: 0 0 auto;
+}
+
+.account-popover-identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.account-popover-identity strong {
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-popover-identity small {
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-popover-role {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f0f2f5;
+  color: #4b5563;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.account-popover-logout {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
 
 /* Shared popover menu actions */
 .model-menu button,

@@ -49,6 +49,17 @@ public class KeycloakAdminClient {
                 .retrieve().bodyToFlux(Map.class).map(value -> (Map<String, Object>) value).collectList().block(timeout);
     }
 
+    public boolean userExists(String userId) {
+        try {
+            client.get().uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                    .headers(headers -> headers.setBearerAuth(adminToken()))
+                    .retrieve().toBodilessEntity().block(timeout);
+            return true;
+        } catch (org.springframework.web.reactive.function.client.WebClientResponseException.NotFound exception) {
+            return false;
+        }
+    }
+
     public void createUser(Map<String, Object> payload) {
         client.post().uri("/admin/realms/{realm}/users", realm).headers(headers -> headers.setBearerAuth(adminToken())).contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(payload).retrieve().toBodilessEntity().block(timeout);

@@ -6,9 +6,11 @@ const AUTO_CLOSE_MS = 4000
 export default function Toast({ notifications = [], onClose }) {
   if (!notifications.length) return null
 
+  const visibleNotifications = notifications.slice(0, 3)
+
   return (
     <div className="toast-stack" aria-live="polite" aria-relevant="additions removals">
-      {notifications.map((notification) => (
+      {visibleNotifications.map((notification) => (
         <ToastItem key={notification.id} notification={notification} onClose={onClose} />
       ))}
     </div>
