@@ -87,6 +87,7 @@ export default function SelectDropdown({
     <ul
       ref={menuRef}
       id={menuId}
+      data-floating-layer-child
       className={`custom-dropdown-menu custom-dropdown-menu-portal ${className}`.trim()}
       role="listbox"
       aria-label={ariaLabel}

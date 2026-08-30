@@ -124,7 +124,8 @@ function useFloatingLayer(open, onClose, triggerRef, layerRef) {
     }
     const frame = window.requestAnimationFrame(place)
     const onPointerDown = (event) => {
-      if (!triggerRef.current?.contains(event.target) && !layerRef.current?.contains(event.target)) onClose(false)
+      const isNestedPortal = event.target instanceof Element && event.target.closest('[data-floating-layer-child]')
+      if (!isNestedPortal && !triggerRef.current?.contains(event.target) && !layerRef.current?.contains(event.target)) onClose(false)
     }
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
