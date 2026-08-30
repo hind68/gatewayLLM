@@ -39,7 +39,7 @@ Spring Boot gateway
   +--> LiteLLM --> OpenAI / Groq / Gemini / Mistral
 ```
 
-The backend is the trust boundary. All `/api/**` routes require a valid Keycloak JWT. Admin routes additionally require the `ADMIN` realm role. Only `/actuator/health` is public.
+The backend is the trust boundary. All `/api/**` routes require a valid Keycloak JWT. Admin routes require the `ADMIN` realm role; `SUPER_ADMIN` is a composite role that inherits `ADMIN`. Only `/actuator/health` is public.
 
 ## Local service URLs
 
@@ -93,12 +93,24 @@ Replace every `change_me_...` value in `.env`. Add the provider keys you intend 
 - `KEYCLOAK_DB_PASSWORD`: password for the Keycloak database.
 - `KEYCLOAK_ADMIN_PASSWORD`: local Keycloak console administrator password.
 - `KEYCLOAK_DEMO_PASSWORD`: local-only password assigned to the imported development users.
+- `KEYCLOAK_SUPER_ADMIN_USERNAME`: username that provisioning protects and assigns `SUPER_ADMIN` (defaults to `admin`).
 - `GATEWAY_ADMIN_CLIENT_SECRET`: secret for the backend's Keycloak service account.
 - `POSTGRES_HOST_PORT`: defaults to `5433` to avoid a common local `5432` collision.
 
 The frontend defaults in `frontend/.env.example` point to the local backend and Keycloak realm. Change them when using different hosts, ports, realm, or client ID.
 
-### 2. Start infrastructure
+### 2. Start the application
+
+The simplest option is to build and start the complete application with Docker Compose:
+
+```powershell
+docker compose --env-file .env up -d --build
+docker compose ps
+```
+
+Open `http://localhost:5173` after the services become healthy. Keycloak redirects unauthenticated users to the `synapse` login page.
+
+For local frontend or backend development, start only the infrastructure services instead:
 
 ```powershell
 docker compose up -d postgres litellm dlp-service keycloak-db keycloak keycloak-provisioner
@@ -115,7 +127,7 @@ docker compose logs -f dlp-service
 docker compose logs -f litellm
 ```
 
-### 3. Start the backend
+### 3. Start the backend outside Docker (optional)
 
 ```powershell
 cd backend
@@ -130,7 +142,9 @@ If Java resolves `localhost` incorrectly on Windows, run this before starting th
 $env:JAVA_TOOL_OPTIONS="-Djava.net.preferIPv4Stack=true"
 ```
 
-### 4. Start the frontend
+When the backend runs outside Docker, `DLP_PATTERNS_FILE` must resolve to the DLP patterns JSON file. The default works when starting from `backend/`; otherwise configure an absolute path.
+
+### 4. Start the frontend outside Docker (optional)
 
 ```powershell
 cd frontend
@@ -149,12 +163,25 @@ administrator.
 
 | Username | Realm roles |
 | --- | --- |
-| `admin`, `admin1`, `admin2` | `ADMIN` (the `admin` account also has `USER`) |
+| `admin` | `SUPER_ADMIN` (inherits `ADMIN` and also has `USER`) |
+| `admin1`, `admin2` | `ADMIN` |
 | `intern1`, `intern2` | `INTERN` |
 | `extern1`, `extern2` | `EXTERN` |
 | `user` | `USER` |
 
 These accounts and their shared password are for local development only.
+
+## Administration roles
+
+`ADMIN` and `SUPER_ADMIN` can use the administration area and manage ordinary users, policies, models, monitoring, and audit data. The following safeguards apply to account and permission management:
+
+- No account can modify a `SUPER_ADMIN` or assign the `SUPER_ADMIN` role through the application.
+- An `ADMIN` can manage ordinary users and promote an ordinary user to `ADMIN`.
+- An `ADMIN` cannot change an existing administrator after that account has the `ADMIN` role.
+- Only a `SUPER_ADMIN` can modify an existing administrator or the permissions attached to the `ADMIN` role.
+- Creating a Keycloak user from the administration area is restricted to `SUPER_ADMIN`. The creator can assign `ADMIN`, `INTERN`, or `EXTERN` and can require a password change on first login.
+
+These restrictions are enforced by the backend as well as hidden or disabled in the frontend.
 
 ## Security and DLP behavior
 
