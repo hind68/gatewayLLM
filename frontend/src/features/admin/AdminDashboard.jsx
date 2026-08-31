@@ -65,7 +65,7 @@ import {
   StatCard,
   StatusBadge,
 } from './AdminComponents'
-import { assignableUserRoles, canManageUserSettings, editablePermissionRoles, formatAction, formatDateFilterDigits, formatDateFilterValue, formatEntity, parseDateFilterValue, restrictionModelOptions, userDirectoryName } from './AdminUtils'
+import { assignableUserRoles, canManageUserSettings, editablePermissionRoles, formatAction, formatEntity, restrictionModelOptions, userDirectoryName } from './AdminUtils'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const isUuid = (value) => UUID_PATTERN.test(String(value || ''))
@@ -973,25 +973,7 @@ function AuditSection({ loading, error, view, setView, logs, messages, users, se
 }
 
 function DateFilterInput({ value, onChange }) {
-  const [displayValue, setDisplayValue] = useState(() => formatDateFilterValue(value))
-
-  const handleChange = (event) => {
-    const nextDisplayValue = formatDateFilterDigits(event.target.value)
-    setDisplayValue(nextDisplayValue)
-    if (!nextDisplayValue) onChange('')
-    else {
-      const parsedValue = parseDateFilterValue(nextDisplayValue)
-      if (parsedValue) onChange(parsedValue)
-    }
-  }
-
-  const handleBlur = () => {
-    if (displayValue && !parseDateFilterValue(displayValue)) {
-      setDisplayValue(formatDateFilterValue(value))
-    }
-  }
-
-  return <input type="text" inputMode="numeric" autoComplete="off" placeholder="jj/mm/aaaa" aria-label="Date au format jour mois année" maxLength={10} value={displayValue} onChange={handleChange} onBlur={handleBlur} />
+  return <input type="date" value={value || ''} onChange={(event) => onChange(event.target.value)} aria-label="Filtrer par date" />
 }
 function formatDate(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) }
 function dateRange(value) { if (!value) return {}; const [year, month, day] = value.split('-').map(Number); if (!year || !month || !day) return {}; return { from: new Date(year, month - 1, day, 0, 0, 0, 0).toISOString(), to: new Date(year, month - 1, day, 23, 59, 59, 999).toISOString() } }
